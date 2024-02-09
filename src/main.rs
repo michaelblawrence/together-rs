@@ -1,10 +1,11 @@
 use std::{
     io::{BufRead, Read},
     process::Stdio,
+    sync::{Arc, Mutex},
 };
 
 use clap::Parser;
-use dialoguer::{theme::ColorfulTheme, MultiSelect};
+use dialoguer::{theme::ColorfulTheme, MultiSelect, Select};
 
 // This is a tool similar to 'concurrently' and 'parallelshell' in Node.js,
 // but for Rust. It allows you to run multiple commands in parallel selectively by an interactive prompt.
@@ -52,102 +53,96 @@ fn main() {
 }
 
 fn run_command(run_opts: RunOpts) {
-    let opts_commands = get_chosen_commands(&run_opts)
-        .into_iter()
-        .map(|cmd| Box::leak(cmd.into_boxed_str()))
-        .collect::<Vec<_>>();
-    let mut commands = vec![];
+    let commands = prompt_commands(&run_opts, SelectionType::Together);
 
-    for (idx, opts_command) in opts_commands.iter().enumerate() {
-        let command = &mut std::process::Command::new("bash");
-        let command = command.arg("-c").arg(opts_command).stdin(Stdio::null());
+    let threads = Arc::new(Mutex::new(vec![]));
+    let (spawn_sender, spawn_receiver) =
+        std::sync::mpsc::channel::<(usize, String, std::process::Child)>();
 
-        let command = if run_opts.raw_io_mode {
-            command.stdout(Stdio::inherit()).stderr(Stdio::inherit())
-        } else {
-            command.stdout(Stdio::piped()).stderr(Stdio::piped())
-        };
-
-        let command = command.spawn();
-
-        let label = format!("[{}]", idx + 1);
-        println!("[{} running]: {}", label, opts_command);
-        commands.push((opts_command, command.unwrap()));
+    for (idx, (input, command)) in commands.into_iter().enumerate() {
+        spawn_sender.send((idx, input, command)).unwrap();
     }
 
-    let mut threads = vec![];
-    for (idx, (input, mut command)) in commands.into_iter().enumerate() {
-        let label = format!("[{}]", idx + 1);
-        let (sender, receiver) = std::sync::mpsc::channel();
-        let thread = if run_opts.raw_io_mode {
-            let label_clone = label.clone();
-            let input_clone = input.to_string();
-            let thread = std::thread::spawn(move || loop {
-                if let Ok(()) = receiver.try_recv() {
-                    match command.kill() {
-                        Ok(_) => println!("[{} killed]: {}", &label_clone, input_clone),
+    let threads_clone = threads.clone();
+    let spawn_thread = std::thread::spawn(move || {
+        while let Ok((idx, input, mut command)) = spawn_receiver.recv() {
+            let label = format!("[{}]", idx + 1);
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let thread = if run_opts.raw_io_mode {
+                let label_clone = label.clone();
+                let input_clone = input.to_string();
+                let thread = std::thread::spawn(move || loop {
+                    if let Ok(()) = receiver.try_recv() {
+                        match command.kill() {
+                            Ok(_) => println!("[{} killed]: {}", &label_clone, input_clone),
+                            Err(_) => {
+                                println!("[{} failed to kill]: {}", &label_clone, input_clone);
+                                break;
+                            }
+                        }
+                    }
+                    match command.try_wait() {
+                        Ok(Some(_)) => {
+                            break;
+                        }
+                        Ok(None) => {
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                        }
                         Err(_) => {
-                            println!("[{} failed to kill]: {}", &label_clone, input_clone);
                             break;
                         }
                     }
-                }
-                match command.try_wait() {
-                    Ok(Some(_)) => {
-                        break;
-                    }
-                    Ok(None) => {
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                    }
-                    Err(_) => {
-                        break;
-                    }
-                }
-            });
-            thread
-        } else {
-            let stdout = command.stdout.take().unwrap();
-            let stderr = command.stderr.take().unwrap();
+                });
+                thread
+            } else {
+                let stdout = command.stdout.take().unwrap();
+                let stderr = command.stderr.take().unwrap();
 
-            let mut stdout = std::io::BufReader::new(stdout);
-            let mut stderr = std::io::BufReader::new(stderr);
-            let mut stdout_line = String::new();
-            let mut stderr_line = String::new();
+                let mut stdout = std::io::BufReader::new(stdout);
+                let mut stderr = std::io::BufReader::new(stderr);
+                let mut stdout_line = String::new();
+                let mut stderr_line = String::new();
 
-            let label_clone = label.clone();
-            // in another thread, print stdout and stderr
-            std::thread::spawn(move || loop {
-                if let Ok(()) = receiver.try_recv() {
-                    command.kill().unwrap();
-                }
-                stdout_line.clear();
-                stderr_line.clear();
-                let stdout_read = stdout.read_line(&mut stdout_line);
-                let stderr_read = stderr.read_line(&mut stderr_line);
-                match (stdout_read, stderr_read) {
-                    (Ok(0), Ok(0)) => {
-                        break;
+                let label_clone = label.clone();
+                // in another thread, print stdout and stderr
+                std::thread::spawn(move || loop {
+                    if let Ok(()) = receiver.try_recv() {
+                        command.kill().unwrap();
                     }
-                    (Ok(_), Ok(_)) => {
-                        print!("{} {}", label_clone, stdout_line);
-                        eprint!("{} {}", label_clone, stderr_line);
+                    stdout_line.clear();
+                    stderr_line.clear();
+                    let stdout_read = stdout.read_line(&mut stdout_line);
+                    let stderr_read = stderr.read_line(&mut stderr_line);
+                    match (stdout_read, stderr_read) {
+                        (Ok(0), Ok(0)) => {
+                            break;
+                        }
+                        (Ok(_), Ok(_)) => {
+                            print!("{} {}", label_clone, stdout_line);
+                            eprint!("{} {}", label_clone, stderr_line);
+                        }
+                        (Ok(_), _) => {
+                            print!("{} {}", label_clone, stdout_line);
+                        }
+                        (_, Ok(_)) => {
+                            eprint!("{} {}", label_clone, stderr_line);
+                        }
+                        _ => {
+                            break;
+                        }
                     }
-                    (Ok(_), _) => {
-                        print!("{} {}", label_clone, stdout_line);
-                    }
-                    (_, Ok(_)) => {
-                        eprint!("{} {}", label_clone, stderr_line);
-                    }
-                    _ => {
-                        break;
-                    }
-                }
-            })
-        };
-        threads.push((label.clone(), input, sender, Some(thread)));
-    }
+                })
+            };
+            let mut threads = threads_clone.lock().unwrap();
+            threads.push((label.clone(), input, sender, Some(thread)));
+        }
+    });
 
     loop {
+        // pause for a while
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let mut threads = threads.lock().unwrap();
         for (label, input, _, item) in threads.iter_mut() {
             if let Some(thread) = item {
                 if thread.is_finished() {
@@ -156,8 +151,6 @@ fn run_command(run_opts: RunOpts) {
                 }
             }
         }
-        // pause for a while
-        std::thread::sleep(std::time::Duration::from_millis(100));
         // remove finished threads
         threads.retain(|(_, _, _, item)| item.is_some());
         if threads.is_empty() {
@@ -178,11 +171,49 @@ fn run_command(run_opts: RunOpts) {
                         _ = sender.send(())
                     }
                 }
+                't' => {
+                    println!("together is triggering a one-time run");
+                    let opts_commands = get_chosen_commands(&run_opts, SelectionType::Once);
+                    for opts_command in opts_commands {
+                        let command = spawn(&opts_command, &run_opts);
+                        println!("[x running]: {}", opts_command);
+                        spawn_sender
+                            .send((0, opts_command, command.unwrap()))
+                            .unwrap();
+                    }
+                }
+                'k' => {
+                    println!("together is killing a running command");
+                    let commands: Vec<String> = threads
+                        .iter()
+                        .map(|(label, input, _, _)| format!("{}: {}", label, input))
+                        .collect();
+
+                    match Select::with_theme(&ColorfulTheme::default())
+                        .with_prompt("Pick command to kill, or press 'q' to cancel")
+                        .items(&commands)
+                        .interact_opt()
+                    {
+                        Ok(Some(index)) => {
+                            let (_, _, sender, _) = &threads[index];
+                            _ = sender.send(());
+                            println!("Sent kill signal to {}", commands[index]);
+                        }
+                        Ok(None) => {
+                            println!("No command selected");
+                        }
+                        Err(_) => {
+                            println!("Error selecting command");
+                        }
+                    }
+                }
                 '?' => {
                     println!("together is running {} commands in parallel", threads.len());
                     for (label, input, _, _) in threads.iter() {
                         println!("{}: {}", label, input);
                     }
+                    println!("Press 't' to trigger a one-time run");
+                    println!("Press 'k' to kill a running command");
                     println!("Press 'q' to stop");
                 }
                 _ => {}
@@ -191,17 +222,59 @@ fn run_command(run_opts: RunOpts) {
     }
 }
 
-fn get_chosen_commands(run_opts: &RunOpts) -> Vec<String> {
+fn prompt_commands(run_opts: &RunOpts, which: SelectionType) -> Vec<(String, std::process::Child)> {
+    let opts_commands = get_chosen_commands(run_opts, which);
+    // .into_iter()
+    // // .map(|cmd| Box::leak(cmd.into_boxed_str()))
+    // .collect::<Vec<_>>();
+    let mut commands = vec![];
+
+    for (idx, opts_command) in opts_commands.iter().enumerate() {
+        let label = format!("[{}]", idx + 1);
+        let command = spawn(opts_command, run_opts);
+        println!("[{} running]: {}", label, opts_command);
+        commands.push((opts_command.clone(), command.unwrap()));
+    }
+    commands
+}
+
+fn spawn(shell_command: &str, run_opts: &RunOpts) -> std::io::Result<std::process::Child> {
+    let command = &mut std::process::Command::new("bash");
+    let command = command.arg("-c").arg(shell_command).stdin(Stdio::null());
+
+    let command = if run_opts.raw_io_mode {
+        command.stdout(Stdio::inherit()).stderr(Stdio::inherit())
+    } else {
+        command.stdout(Stdio::piped()).stderr(Stdio::piped())
+    };
+
+    let command = command.spawn();
+    command
+}
+
+enum SelectionType {
+    Together,
+    Once,
+}
+
+fn get_chosen_commands(run_opts: &RunOpts, which: SelectionType) -> Vec<String> {
     let opts_commands = match run_opts.interactive {
         true => {
             let mut opts_commands = vec![];
             let defaults = run_opts.commands.iter().map(|_| false).collect::<Vec<_>>();
-            let selections = MultiSelect::with_theme(&ColorfulTheme::default())
-                .with_prompt("Pick commands to run together")
-                .items(&run_opts.commands[..])
-                .defaults(&defaults[..])
-                .interact()
-                .unwrap();
+            let multi_select = match which {
+                SelectionType::Together => MultiSelect::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Pick commands to run together")
+                    .items(&run_opts.commands[..])
+                    .defaults(&defaults[..])
+                    .interact(),
+                SelectionType::Once => Select::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Pick command to run once")
+                    .items(&run_opts.commands[..])
+                    .interact()
+                    .map(|index| vec![index]),
+            };
+            let selections = multi_select.unwrap();
             for index in selections {
                 opts_commands.push(run_opts.commands[index].clone());
             }

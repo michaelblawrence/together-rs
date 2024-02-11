@@ -61,7 +61,7 @@ impl Terminal {
         let defaults = items.iter().map(|_| false).collect::<Vec<_>>();
         let multi_select = MultiSelect::with_theme(&ColorfulTheme::default())
             .with_prompt(prompt)
-            .items(&items[..])
+            .items(items)
             .defaults(&defaults[..])
             .interact();
         let selections = multi_select.unwrap();
@@ -73,7 +73,7 @@ impl Terminal {
     pub fn select_single<'a, T: std::fmt::Display>(prompt: &'a str, items: &'a [T]) -> &'a T {
         let index = dialoguer::Select::with_theme(&ColorfulTheme::default())
             .with_prompt(prompt)
-            .items(&items[..])
+            .items(items)
             .interact()
             .unwrap();
         &items[index]
@@ -92,12 +92,12 @@ impl Terminal {
 #[macro_export]
 macro_rules! log {
     ($($arg:tt)*) => {
-        crate::terminal::Terminal::log(&format!($($arg)*));
+        $crate::terminal::Terminal::log(&format!($($arg)*));
     };
 }
 #[macro_export]
 macro_rules! log_err {
     ($($arg:tt)*) => {
-        crate::terminal::Terminal::log_error(&format!($($arg)*));
+        $crate::terminal::Terminal::log_error(&format!($($arg)*));
     };
 }

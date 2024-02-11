@@ -58,16 +58,16 @@ fn handle_user_input(
                 log!("[help]");
                 println!("together is a tool to run multiple commands in parallel selectively by an interactive prompt.");
 
-                println!("");
+                println!();
                 println!("Press 't' to trigger a one-time run");
                 println!("Press 'k' to kill a running command");
                 println!("Press 'r' to restart a running command");
                 println!("Press 'l' to list all running commands");
                 println!("Press 'h' or '?' to show this help message");
                 println!("Press 'q' to stop");
-                println!("");
+                println!();
 
-                println!("");
+                println!();
                 log!("[status]");
                 let response = sender.send(ProcessAction::List)?;
                 match response {

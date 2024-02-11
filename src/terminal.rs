@@ -39,6 +39,13 @@ pub struct Run {
     )]
     pub exit_on_error: bool,
 
+    #[clap(
+        short,
+        long,
+        help = "Quit the program when all commands have completed."
+    )]
+    pub quit_on_completion: bool,
+
     #[clap(short, long, help = "Enable raw stdout/stderr output.")]
     pub raw: bool,
 }

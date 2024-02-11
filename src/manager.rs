@@ -1,13 +1,9 @@
-use std::{
-    collections::HashMap,
-    io::BufRead,
-    process::{ChildStderr, ChildStdout},
-    sync::{mpsc, Arc},
-};
+use std::{collections::HashMap, sync::mpsc};
 
 use crate::{
     errors::{TogetherError, TogetherResult},
     log, log_err,
+    process::{Process, ProcessId},
 };
 
 pub enum ProcessAction {
@@ -35,29 +31,8 @@ pub enum ProcessManagerError {
 
 pub struct Message(ProcessAction, mpsc::Sender<ProcessActionResponse>);
 
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct ProcessId {
-    id: u32,
-    command: Arc<str>,
-}
-
-impl ProcessId {
-    pub fn command(&self) -> &str {
-        &self.command
-    }
-    pub fn id(&self) -> u32 {
-        self.id
-    }
-}
-
-impl std::fmt::Display for ProcessId {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "[{}]: {}", self.id, self.command)
-    }
-}
-
 pub struct ProcessManager {
-    processes: HashMap<ProcessId, std::process::Child>,
+    processes: HashMap<ProcessId, Process>,
     receiver: mpsc::Receiver<Message>,
     sender: mpsc::Sender<Message>,
     index: u32,
@@ -104,171 +79,26 @@ impl ProcessManager {
         }
     }
 
-    fn child_stdio_loop(id: &ProcessId, stdout: ChildStdout, stderr: ChildStderr) {
-        let mut stdout = std::io::BufReader::new(stdout);
-        let mut stderr = std::io::BufReader::new(stderr);
-        let mut stdout_line = String::new();
-        let mut stderr_line = String::new();
-        loop {
-            let mut stdout_done = false;
-            let mut stderr_done = false;
-            let mut stdout_bytes = vec![];
-            let mut stderr_bytes = vec![];
-            let stdout_read = stdout.read_line(&mut stdout_line);
-            let stderr_read = stderr.read_line(&mut stderr_line);
-            match (stdout_read, stderr_read) {
-                (Ok(0), Ok(0)) => {
-                    stdout_done = true;
-                    stderr_done = true;
-                }
-                (Ok(0), _) => {
-                    stdout_done = true;
-                }
-                (_, Ok(0)) => {
-                    stderr_done = true;
-                }
-                (Ok(_), Ok(_)) => {}
-                (Err(e), _) => {
-                    log_err!("Failed to read stdout: {}", e);
-                    stdout_done = true;
-                }
-                (_, Err(e)) => {
-                    log_err!("Failed to read stderr: {}", e);
-                    stderr_done = true;
-                }
-            }
-            if !stdout_done {
-                stdout_bytes.extend(stdout_line.as_bytes());
-                stdout_line.clear();
-            }
-            if !stderr_done {
-                stderr_bytes.extend(stderr_line.as_bytes());
-                stderr_line.clear();
-            }
-            if !stdout_bytes.is_empty() {
-                print!("{}: {}", id.id, String::from_utf8_lossy(&stdout_bytes));
-            }
-            if !stderr_bytes.is_empty() {
-                eprint!("{}: {}", id.id, String::from_utf8_lossy(&stderr_bytes));
-            }
-            if stdout_done && stderr_done {
-                break;
-            }
-        }
-    }
-
     fn rx_message_loop(mut self) {
         loop {
             match self.receiver.try_recv() {
                 Ok(message) => {
-                    let response = match message.0 {
-                        ProcessAction::Create(command) => {
-                            let id = self.index;
-                            self.index += 1;
-
-                            match spawn_process(&command, self.raw_stdio) {
-                                Ok(mut child) => {
-                                    let id = ProcessId {
-                                        id,
-                                        command: command.into_boxed_str().into(),
-                                    };
-                                    if !self.raw_stdio {
-                                        spawn_stdio_thread(&id, &mut child);
-                                    }
-                                    self.processes.insert(id.clone(), child);
-                                    log!("Started {}", id);
-                                    ProcessActionResponse::Created
-                                }
-                                Err(e) => ProcessActionResponse::Error(
-                                    ProcessManagerError::SpawnChildFailed(e.to_string()),
-                                ),
-                            }
-                        }
-                        ProcessAction::Kill(id) => match self.processes.get_mut(&id) {
-                            Some(child) => match child.kill() {
-                                Ok(_) => {
-                                    log!("Killing {}", id);
-                                    ProcessActionResponse::Killed
-                                }
-                                Err(e) => ProcessActionResponse::Error(
-                                    ProcessManagerError::KillChildFailed(e.to_string()),
-                                ),
-                            },
-                            None => {
-                                ProcessActionResponse::Error(ProcessManagerError::NoSuchProcess)
-                            }
-                        },
-                        ProcessAction::KillAll => {
-                            let mut errors = vec![];
-                            for (id, child) in self.processes.iter_mut() {
-                                match child.kill() {
-                                    Ok(_) => {
-                                        log!("Killing {}", id);
-                                    }
-                                    Err(e) => {
-                                        errors.push(ProcessManagerError::KillChildFailed(
-                                            e.to_string(),
-                                        ));
-                                    }
-                                }
-                            }
-                            if errors.is_empty() {
-                                ProcessActionResponse::KilledAll
-                            } else {
-                                ProcessActionResponse::Error(ProcessManagerError::Unknown)
-                            }
-                        }
-                        ProcessAction::List => {
-                            let list = self.processes.keys().cloned().collect();
-                            ProcessActionResponse::List(list)
-                        }
-                    };
+                    let response = self.process_message(message.0);
                     message.1.send(response).unwrap();
                 }
                 Err(mpsc::TryRecvError::Empty) => {
                     std::thread::sleep(std::time::Duration::from_millis(100));
 
-                    let mut remove = vec![];
-                    let mut kill_all = false;
+                    if !self.processes.is_empty() {
+                        self.cleanup_dead_processes();
 
-                    for (id, child) in self.processes.iter_mut() {
-                        match child.try_wait() {
-                            Ok(Some(status)) => {
-                                remove.push(id.clone());
-                                if !status.success() && self.exit_on_error {
-                                    log_err!("{}: exited with non-zero status", id);
-                                    kill_all = true;
-                                }
+                        if self.processes.is_empty() {
+                            if self.quit_on_completion {
+                                log!("All processes have exited, stopping...");
+                                std::process::exit(0);
                             }
-                            Ok(None) => {}
-                            Err(e) => {
-                                log_err!("Failed to check child status: {}", e);
-                            }
-                        }
-                    }
 
-                    let had_processes = !self.processes.is_empty();
-                    for id in remove {
-                        self.processes.remove(&id);
-                        log!("Exited {}", id);
-                    }
-                    if kill_all {
-                        for (id, mut child) in self.processes.drain() {
-                            match child.kill() {
-                                Ok(_) => {}
-                                Err(e) => {
-                                    log_err!("Failed to kill {id} => {}", e);
-                                }
-                            }
-                        }
-                    }
-                    let have_processes = !self.processes.is_empty();
-
-                    if had_processes && !have_processes {
-                        log!("All processes have exited");
-                        if self.quit_on_completion {
-                            log!("Stopping...");
-                            std::process::exit(0);
+                            log!("No more processes running, waiting for new commands...");
                         }
                     }
                 }
@@ -278,34 +108,100 @@ impl ProcessManager {
             }
         }
     }
-}
 
-// TODO: use https://github.com/hniksic/rust-subprocess
-fn spawn_stdio_thread(id: &ProcessId, child: &mut std::process::Child) {
-    let stdout = child.stdout.take().unwrap();
-    let stderr = child.stderr.take().unwrap();
-    let id = id.clone();
-    std::thread::spawn(move || {
-        let id = id.clone();
-        ProcessManager::child_stdio_loop(&id, stdout, stderr)
-    });
-}
+    fn process_message(&mut self, payload: ProcessAction) -> ProcessActionResponse {
+        match payload {
+            ProcessAction::Create(command) => {
+                let id = self.index;
+                self.index += 1;
 
-fn spawn_process(command: &String, raw: bool) -> Result<std::process::Child, std::io::Error> {
-    std::process::Command::new("sh")
-        .arg("-c")
-        .arg(command)
-        .stdout(if raw {
-            std::process::Stdio::inherit()
-        } else {
-            std::process::Stdio::piped()
-        })
-        .stderr(if raw {
-            std::process::Stdio::inherit()
-        } else {
-            std::process::Stdio::piped()
-        })
-        .spawn()
+                match Process::spawn(&command, self.raw_stdio) {
+                    Ok(mut child) => {
+                        let id = ProcessId::new(id, command);
+                        if !self.raw_stdio {
+                            child.forward_stdio(&id);
+                        }
+                        self.processes.insert(id.clone(), child);
+                        log!("Started {}", id);
+                        ProcessActionResponse::Created
+                    }
+                    Err(e) => ProcessActionResponse::Error(ProcessManagerError::SpawnChildFailed(
+                        e.to_string(),
+                    )),
+                }
+            }
+            ProcessAction::Kill(id) => match self.processes.get_mut(&id) {
+                Some(child) => match child.kill() {
+                    Ok(_) => {
+                        log!("Killing {}", id);
+                        ProcessActionResponse::Killed
+                    }
+                    Err(e) => ProcessActionResponse::Error(ProcessManagerError::KillChildFailed(
+                        e.to_string(),
+                    )),
+                },
+                None => ProcessActionResponse::Error(ProcessManagerError::NoSuchProcess),
+            },
+            ProcessAction::KillAll => {
+                let mut errors = vec![];
+                for (id, child) in self.processes.iter_mut() {
+                    match child.kill() {
+                        Ok(_) => {
+                            log!("Killing {}", id);
+                        }
+                        Err(e) => {
+                            errors.push(ProcessManagerError::KillChildFailed(e.to_string()));
+                        }
+                    }
+                }
+                if errors.is_empty() {
+                    ProcessActionResponse::KilledAll
+                } else {
+                    ProcessActionResponse::Error(ProcessManagerError::Unknown)
+                }
+            }
+            ProcessAction::List => {
+                let list = self.processes.keys().cloned().collect();
+                ProcessActionResponse::List(list)
+            }
+        }
+    }
+
+    fn cleanup_dead_processes(&mut self) {
+        let mut remove = vec![];
+        let mut kill_all = false;
+
+        for (id, child) in self.processes.iter_mut() {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    remove.push(id.clone());
+                    if status != 0 && self.exit_on_error {
+                        log_err!("{}: exited with non-zero status", id);
+                        kill_all = true;
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    log_err!("Failed to check child status: {}", e);
+                }
+            }
+        }
+
+        for id in remove {
+            self.processes.remove(&id);
+            log!("Exited {}", id);
+        }
+        if kill_all {
+            for (id, mut child) in self.processes.drain() {
+                match child.kill() {
+                    Ok(_) => {}
+                    Err(e) => {
+                        log_err!("Failed to kill {id} => {}", e);
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub struct ProcessManagerHandle {

@@ -3,6 +3,7 @@ use manager::ProcessAction;
 
 mod errors;
 mod manager;
+mod process;
 mod terminal;
 
 fn main() {
@@ -22,6 +23,7 @@ fn run_command(opts: terminal::Run) -> Result<(), errors::TogetherError> {
     let manager = manager::ProcessManager::new()
         .with_raw_mode(opts.raw)
         .with_exit_on_error(opts.exit_on_error)
+        .with_quit_on_completion(opts.quit_on_completion)
         .start();
 
     let sender = manager.subscribe();

@@ -9,6 +9,12 @@ use dialoguer::{theme::ColorfulTheme, MultiSelect};
 pub struct Opts {
     #[clap(subcommand)]
     pub sub: SubCommand,
+
+    #[clap(short, long, help = "Ignore configuration file.")]
+    pub no_config: bool,
+
+    #[clap(short, long = "cwd", help = "Directory to run commands in.")]
+    pub working_directory: Option<String>,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -18,9 +24,24 @@ pub enum SubCommand {
         about = "Run multiple commands in parallel selectively by an interactive prompt."
     )]
     Run(Run),
+
+    #[clap(name = "rerun", about = "Rerun the last together session.")]
+    Rerun(Rerun),
+
+    #[clap(name = "load", about = "Run commands from a configuration file.")]
+    Load(Load),
 }
 
 #[derive(Debug, clap::Parser)]
+pub struct Load {
+    #[clap(last = true, required = true, help = "Configuration file path.")]
+    pub path: String,
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct Rerun {}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, clap::Parser)]
 pub struct Run {
     #[clap(
         last = true,
@@ -70,13 +91,16 @@ impl Terminal {
         }
         opts_commands
     }
-    pub fn select_single<'a, T: std::fmt::Display>(prompt: &'a str, items: &'a [T]) -> &'a T {
+    pub fn select_single<'a, T: std::fmt::Display>(
+        prompt: &'a str,
+        items: &'a [T],
+    ) -> Option<&'a T> {
         let index = dialoguer::Select::with_theme(&ColorfulTheme::default())
             .with_prompt(prompt)
             .items(items)
-            .interact()
-            .unwrap();
-        &items[index]
+            .interact_opt()
+            .unwrap()?;
+        Some(&items[index])
     }
     pub fn log(message: &str) {
         // print message with green colorized prefix

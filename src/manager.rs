@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::mpsc};
 
 use crate::{
-    errors::{TogetherError, TogetherResult},
+    errors::{TogetherError, TogetherInternalError, TogetherResult},
     log, log_err,
     process::{Process, ProcessId},
 };
@@ -11,6 +11,7 @@ pub enum ProcessAction {
     Kill(ProcessId),
     KillAll,
     List,
+    SetMute(bool),
 }
 
 pub enum ProcessActionResponse {
@@ -19,6 +20,7 @@ pub enum ProcessActionResponse {
     KilledAll,
     List(Vec<ProcessId>),
     Error(ProcessManagerError),
+    MuteSet,
 }
 
 #[derive(Debug)]
@@ -39,6 +41,8 @@ pub struct ProcessManager {
     raw_stdio: bool,
     exit_on_error: bool,
     quit_on_completion: bool,
+    killed: bool,
+    cwd: Option<String>,
 }
 
 impl ProcessManager {
@@ -52,6 +56,8 @@ impl ProcessManager {
             raw_stdio: false,
             exit_on_error: false,
             quit_on_completion: true,
+            killed: false,
+            cwd: None,
         }
     }
 
@@ -70,6 +76,11 @@ impl ProcessManager {
         self
     }
 
+    pub fn with_working_directory(mut self, working_directory: Option<String>) -> Self {
+        self.cwd = working_directory;
+        self
+    }
+
     pub fn start(self) -> ProcessManagerHandle {
         let sender = self.sender.clone();
         let thread = std::thread::spawn(move || self.rx_message_loop());
@@ -80,33 +91,54 @@ impl ProcessManager {
     }
 
     fn rx_message_loop(mut self) {
+        let timeout = std::time::Duration::from_millis(100);
         loop {
-            match self.receiver.try_recv() {
+            match self.receiver.recv_timeout(timeout) {
                 Ok(message) => {
                     let response = self.process_message(message.0);
                     message.1.send(response).unwrap();
                 }
-                Err(mpsc::TryRecvError::Empty) => {
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    if self.killed {
+                        break;
+                    }
                     if !self.processes.is_empty() {
                         self.cleanup_dead_processes();
 
                         if self.processes.is_empty() {
-                            if self.quit_on_completion {
+                            if self.quit_on_completion || self.killed {
                                 log!("All processes have exited, stopping...");
                                 std::process::exit(0);
                             }
 
-                            log!("No more processes running, waiting for new commands...");
+                            match self
+                                .receiver
+                                .recv_timeout(std::time::Duration::from_millis(100))
+                            {
+                                Ok(Message(ProcessAction::KillAll, _)) => {
+                                    std::process::exit(0);
+                                }
+                                Ok(message) => {
+                                    let response = self.process_message(message.0);
+                                    message.1.send(response).unwrap();
+                                }
+                                Err(mpsc::RecvTimeoutError::Timeout) => {
+                                    log!("No more processes running, waiting for new commands...");
+                                }
+                                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
-                Err(mpsc::TryRecvError::Disconnected) => {
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
                     break;
                 }
             }
         }
+
+        std::process::exit(0);
     }
 
     fn process_message(&mut self, payload: ProcessAction) -> ProcessActionResponse {
@@ -115,7 +147,7 @@ impl ProcessManager {
                 let id = self.index;
                 self.index += 1;
 
-                match Process::spawn(&command, self.raw_stdio) {
+                match Process::spawn(&command, self.cwd.as_deref(), self.raw_stdio) {
                     Ok(mut child) => {
                         let id = ProcessId::new(id, command);
                         if !self.raw_stdio {
@@ -143,6 +175,8 @@ impl ProcessManager {
                 None => ProcessActionResponse::Error(ProcessManagerError::NoSuchProcess),
             },
             ProcessAction::KillAll => {
+                self.killed = true;
+
                 let mut errors = vec![];
                 for (id, child) in self.processes.iter_mut() {
                     match child.kill() {
@@ -163,6 +197,16 @@ impl ProcessManager {
             ProcessAction::List => {
                 let list = self.processes.keys().cloned().collect();
                 ProcessActionResponse::List(list)
+            }
+            ProcessAction::SetMute(mute) => {
+                for (_, child) in self.processes.iter_mut() {
+                    if mute {
+                        child.mute();
+                    } else {
+                        child.unmute();
+                    }
+                }
+                ProcessActionResponse::MuteSet
             }
         }
     }
@@ -223,6 +267,12 @@ impl ProcessManagerHandle {
             sender: self.sender.clone(),
         }
     }
+    pub fn list(&self) -> TogetherResult<Vec<ProcessId>> {
+        self.send(ProcessAction::List).and_then(|r| match r {
+            ProcessActionResponse::List(list) => Ok(list),
+            _ => Err(TogetherInternalError::UnexpectedResponse.into()),
+        })
+    }
 }
 
 impl Drop for ProcessManagerHandle {
@@ -231,13 +281,12 @@ impl Drop for ProcessManagerHandle {
             return;
         };
         let (sender, receiver) = mpsc::channel();
-        match self.sender.send(Message(ProcessAction::KillAll, sender)) {
-            Ok(_) => {}
-            Err(e) => {
-                log_err!("Failed to send kill all message: {}", e);
-                return;
-            }
+
+        if let Err(_) = self.sender.send(Message(ProcessAction::KillAll, sender)) {
+            // the process manager has already exited, nothing to do
+            return;
         };
+
         match receiver.recv() {
             Ok(ProcessActionResponse::KilledAll) => {
                 if let Err(e) = thread.join() {
@@ -250,8 +299,8 @@ impl Drop for ProcessManagerHandle {
             Ok(_) => {
                 log_err!("Received unexpected kill all response");
             }
-            Err(e) => {
-                log_err!("Failed to receive kill all response: {}", e);
+            Err(std::sync::mpsc::RecvError) => {
+                // the process manager has already exited, nothing to do
             }
         }
     }

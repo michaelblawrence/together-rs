@@ -7,7 +7,7 @@ A tool to run multiple commands in parallel selectively by an interactive prompt
 You will need to have Rust installed to build the project. You can install Rust by following the instructions on the [official website](https://www.rust-lang.org/tools/install).
 
 ```sh
-cargo install together
+cargo install together-rs
 ```
 
 ## Usage

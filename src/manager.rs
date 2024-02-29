@@ -8,6 +8,7 @@ use crate::{
 
 pub enum ProcessAction {
     Create(String),
+    Wait(ProcessId),
     Kill(ProcessId),
     KillAll,
     List,
@@ -15,7 +16,8 @@ pub enum ProcessAction {
 }
 
 pub enum ProcessActionResponse {
-    Created,
+    Created(ProcessId),
+    Waited(mpsc::Receiver<()>),
     Killed,
     KilledAll,
     List(Vec<ProcessId>),
@@ -37,6 +39,7 @@ pub struct ProcessManager {
     processes: HashMap<ProcessId, Process>,
     receiver: mpsc::Receiver<Message>,
     sender: mpsc::Sender<Message>,
+    wait_handles: HashMap<ProcessId, mpsc::Sender<()>>,
     index: u32,
     raw_stdio: bool,
     exit_on_error: bool,
@@ -52,6 +55,7 @@ impl ProcessManager {
             processes: HashMap::new(),
             receiver,
             sender,
+            wait_handles: HashMap::new(),
             index: 0,
             raw_stdio: false,
             exit_on_error: false,
@@ -155,13 +159,21 @@ impl ProcessManager {
                         }
                         self.processes.insert(id.clone(), child);
                         log!("Started {}", id);
-                        ProcessActionResponse::Created
+                        ProcessActionResponse::Created(id)
                     }
                     Err(e) => ProcessActionResponse::Error(ProcessManagerError::SpawnChildFailed(
                         e.to_string(),
                     )),
                 }
             }
+            ProcessAction::Wait(id) => match self.processes.get(&id) {
+                Some(_) => {
+                    let (sender, receiver) = mpsc::channel();
+                    self.wait_handles.insert(id.clone(), sender);
+                    ProcessActionResponse::Waited(receiver)
+                }
+                None => ProcessActionResponse::Error(ProcessManagerError::NoSuchProcess),
+            },
             ProcessAction::Kill(id) => match self.processes.get_mut(&id) {
                 Some(child) => match child.kill() {
                     Ok(_) => {
@@ -232,6 +244,9 @@ impl ProcessManager {
         }
 
         for id in remove {
+            if let Some(handle) = self.wait_handles.remove(&id) {
+                handle.send(()).unwrap();
+            }
             self.processes.remove(&id);
             log!("Exited {}", id);
         }

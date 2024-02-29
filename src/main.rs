@@ -1,8 +1,11 @@
 use std::sync::{Arc, Mutex};
 
 use clap::Parser;
+use config::RunContext;
 use errors::TogetherResult;
 use manager::ProcessAction;
+
+use crate::manager::ProcessActionResponse;
 
 mod config;
 mod errors;
@@ -12,25 +15,27 @@ mod terminal;
 
 fn main() {
     let opts = terminal::Opts::parse();
-    let cwd = opts.working_directory.clone();
-    let (run_opts, selected_commands) = config::to_run_opts(opts);
-    let result = run_command(run_opts, selected_commands, cwd);
+    let context = config::to_run_context(opts);
+    let result = run_command(context);
     if let Err(e) = result {
         log_err!("Unexpected error: {}", e);
         std::process::exit(1);
     }
 }
 
-fn run_command(
-    opts: terminal::Run,
-    override_commands: Option<Vec<String>>,
-    working_directory: Option<String>,
-) -> Result<(), errors::TogetherError> {
+fn run_command(context: RunContext) -> Result<(), errors::TogetherError> {
+    let RunContext {
+        opts,
+        override_commands,
+        startup_commands,
+        working_directory,
+    } = &context;
+
     let manager = manager::ProcessManager::new()
         .with_raw_mode(opts.raw)
         .with_exit_on_error(opts.exit_on_error)
         .with_quit_on_completion(opts.quit_on_completion)
-        .with_working_directory(working_directory)
+        .with_working_directory(working_directory.to_owned())
         .start();
 
     let sender = manager.subscribe();
@@ -59,6 +64,12 @@ fn run_command(
                         .iter()
                         .map(|&c| opts.commands.iter().position(|x| x == c).unwrap())
                         .collect(),
+                    startup: startup_commands.as_ref().map(|commands| {
+                        commands
+                            .iter()
+                            .map(|c| opts.commands.iter().position(|x| x == c).unwrap())
+                            .collect()
+                    }),
                 };
                 config::save(&config)?;
                 commands
@@ -66,11 +77,33 @@ fn run_command(
         }
     };
 
+    if let Some(commands) = startup_commands {
+        log!("Running startup commands...");
+        for command in commands {
+            match sender.send(ProcessAction::Create(command.clone()))? {
+                ProcessActionResponse::Created(id) => {
+                    match sender.send(ProcessAction::Wait(id))? {
+                        ProcessActionResponse::Waited(done) => {
+                            done.recv()?;
+                            log!("Startup command '{}' completed", command);
+                        }
+                        _ => {
+                            log_err!("Unexpected response from process manager");
+                        }
+                    }
+                }
+                _ => {
+                    log_err!("Unexpected response from process manager");
+                }
+            }
+        }
+    }
+
     for command in selected_commands {
         sender.send(ProcessAction::Create(command.clone()))?;
     }
 
-    block_for_user_input(opts, sender)?;
+    block_for_user_input(&context, sender)?;
 
     std::mem::drop(manager);
     Ok(())
@@ -96,8 +129,8 @@ pub fn handle_ctrl_signal(sender: manager::ProcessManagerHandle) {
     handler.expect("Error setting Ctrl-C handler");
 }
 
-pub fn block_for_user_input(
-    opts: terminal::Run,
+fn block_for_user_input(
+    context: &RunContext,
     sender: manager::ProcessManagerHandle,
 ) -> Result<(), errors::TogetherError> {
     let mut input = String::new();
@@ -110,6 +143,7 @@ pub fn block_for_user_input(
 
                 println!();
                 println!("Press 't' to trigger a one-time run");
+                println!("Press 'b' to batch trigger a one-time run");
                 println!("Press 'k' to kill a running command");
                 println!("Press 'r' to restart a running command");
                 println!("Press 'l' to list all running commands");
@@ -123,6 +157,9 @@ pub fn block_for_user_input(
                 match sender.list() {
                     Ok(list) => {
                         println!("together is running {} commands in parallel:", list.len());
+                        for command in list {
+                            println!("  {}", command);
+                        }
                     }
                     Err(_) => {
                         println!("together is running in an unknown state");
@@ -143,12 +180,25 @@ pub fn block_for_user_input(
                 let list = sender.list()?;
                 let running = list
                     .iter()
-                    .map(|c| opts.commands.iter().position(|x| x == c.command()).unwrap())
+                    .map(|c| {
+                        context
+                            .opts
+                            .commands
+                            .iter()
+                            .position(|x| x == c.command())
+                            .unwrap()
+                    })
                     .collect();
 
                 let config = config::Config {
-                    run_opts: opts.clone(),
+                    run_opts: context.opts.clone(),
                     running,
+                    startup: context.startup_commands.as_ref().map(|commands| {
+                        commands
+                            .iter()
+                            .map(|c| context.opts.commands.iter().position(|x| x == c).unwrap())
+                            .collect()
+                    }),
                 };
                 config::dump(&config)?;
             }
@@ -179,9 +229,19 @@ pub fn block_for_user_input(
                 let command = select_single_command(
                     "Pick command to run, or press 'q' to cancel",
                     &sender,
-                    &opts.commands,
+                    &context.opts.commands,
                 )?;
                 if let Some(command) = command {
+                    sender.send(ProcessAction::Create(command.clone()))?;
+                }
+            }
+            "b" => {
+                let commands = select_multiple_commands(
+                    "Pick commands to run, or press 'q' to cancel",
+                    &sender,
+                    &context.opts.commands,
+                )?;
+                for command in commands {
                     sender.send(ProcessAction::Create(command.clone()))?;
                 }
             }
@@ -224,6 +284,9 @@ fn select_multiple_commands<'a>(
 ) -> TogetherResult<Vec<&'a String>> {
     sender.send(ProcessAction::SetMute(true))?;
     let commands = terminal::Terminal::select_multiple(prompt, list);
+    if commands.is_empty() {
+        log!("No commands selected...");
+    }
     sender.send(ProcessAction::SetMute(false))?;
     Ok(commands)
 }

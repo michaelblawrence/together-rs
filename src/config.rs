@@ -1,8 +1,15 @@
 use crate::{errors::TogetherResult, log, log_err, terminal};
 
-pub fn to_run_opts(opts: terminal::Opts) -> (terminal::Run, Option<Vec<String>>) {
-    let (run_opts, selected_commands) = match opts.sub {
-        terminal::SubCommand::Run(run_opts) => (run_opts, None),
+pub struct RunContext {
+    pub opts: terminal::Run,
+    pub override_commands: Option<Vec<String>>,
+    pub startup_commands: Option<Vec<String>>,
+    pub working_directory: Option<String>,
+}
+
+pub fn to_run_context(opts: terminal::Opts) -> RunContext {
+    let (run_opts, selected_commands, config) = match opts.sub {
+        terminal::SubCommand::Run(run_opts) => (run_opts, None, None),
 
         terminal::SubCommand::Rerun(_) => {
             if opts.no_config {
@@ -12,7 +19,11 @@ pub fn to_run_opts(opts: terminal::Opts) -> (terminal::Run, Option<Vec<String>>)
             match load() {
                 Ok(config) => {
                     let commands = get_running_commands(&config, &config.running);
-                    (config.run_opts, Some(commands).filter(|c| !c.is_empty()))
+                    (
+                        config.run_opts,
+                        Some(commands).filter(|c| !c.is_empty()),
+                        None,
+                    )
                 }
                 Err(e) => {
                     log_err!("Failed to load configuration: {}", e);
@@ -30,7 +41,11 @@ pub fn to_run_opts(opts: terminal::Opts) -> (terminal::Run, Option<Vec<String>>)
                 Ok(config) => {
                     let running = &config.running;
                     let commands = get_running_commands(&config, running);
-                    (config.run_opts, Some(commands).filter(|c| !c.is_empty()))
+                    (
+                        config.run_opts.clone(),
+                        Some(commands).filter(|c| !c.is_empty()),
+                        Some(config),
+                    )
                 }
                 Err(e) => {
                     log_err!("Failed to load configuration: {}", e);
@@ -39,13 +54,26 @@ pub fn to_run_opts(opts: terminal::Opts) -> (terminal::Run, Option<Vec<String>>)
             }
         }
     };
-    (run_opts, selected_commands)
+
+    RunContext {
+        opts: run_opts,
+        override_commands: selected_commands,
+        startup_commands: config.and_then(|c| {
+            c.startup.map(|s| {
+                s.iter()
+                    .filter_map(|&i| c.run_opts.commands.get(i).cloned())
+                    .collect()
+            })
+        }),
+        working_directory: opts.working_directory,
+    }
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Config {
     pub run_opts: crate::terminal::Run,
     pub running: Vec<usize>,
+    pub startup: Option<Vec<usize>>,
 }
 
 pub fn load_from(config_path: impl AsRef<std::path::Path>) -> TogetherResult<Config> {

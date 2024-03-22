@@ -32,7 +32,7 @@ mod subprocess_impl {
         sync::{Arc, RwLock},
     };
 
-    use subprocess::{Exec, ExitStatus};
+    use subprocess::{unix::PopenExt, Exec, ExitStatus};
 
     use crate::{
         errors::{TogetherInternalError, TogetherResult},
@@ -76,21 +76,22 @@ mod subprocess_impl {
         }
 
         pub fn mute(&self) {
-            log!("Muting process {}", self.popen.pid().unwrap());
-            if let Some(mute) = &self.mute {
-                *mute.write().unwrap() = true;
-            }
+            // TODO: remove
         }
 
         pub fn unmute(&self) {
-            log!("Unmuting process {}", self.popen.pid().unwrap());
-            if let Some(mute) = &self.mute {
-                *mute.write().unwrap() = false;
-            }
+            // TODO: remove
         }
 
         pub fn kill(&mut self) -> TogetherResult<()> {
-            Ok(self.popen.terminate()?)
+            #[cfg(windows)]
+            {
+                Ok(self.popen.terminate()?)
+            }
+            #[cfg(unix)]
+            {
+                Ok(self.popen.send_signal(libc::SIGHUP)?)
+            }
         }
 
         pub fn try_wait(&mut self) -> TogetherResult<Option<i32>> {

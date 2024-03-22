@@ -58,19 +58,20 @@ fn run_command(context: RunContext) -> Result<(), errors::TogetherError> {
                     &sender,
                     &opts.commands,
                 )?;
-                let config = config::Config {
-                    run_opts: opts.clone(),
-                    running: commands
-                        .iter()
-                        .map(|&c| opts.commands.iter().position(|x| x == c).unwrap())
-                        .collect(),
-                    startup: startup_commands.as_ref().map(|commands| {
-                        commands
-                            .iter()
-                            .map(|c| opts.commands.iter().position(|x| x == c).unwrap())
-                            .collect()
-                    }),
-                };
+                let config = config::Config::new(&context, &commands);
+                // let config = config::Config {
+                //     run_opts: opts.clone(),
+                //     running: commands
+                //         .iter()
+                //         .map(|&c| opts.commands.iter().position(|x| x == c).unwrap())
+                //         .collect(),
+                //     startup: startup_commands.as_ref().map(|commands| {
+                //         commands
+                //             .iter()
+                //             .map(|c| opts.commands.iter().position(|x| x == c).unwrap())
+                //             .collect()
+                //     }),
+                // };
                 config::save(&config)?;
                 commands
             }
@@ -178,28 +179,8 @@ fn block_for_user_input(
             }
             "d" => {
                 let list = sender.list()?;
-                let running = list
-                    .iter()
-                    .map(|c| {
-                        context
-                            .opts
-                            .commands
-                            .iter()
-                            .position(|x| x == c.command())
-                            .unwrap()
-                    })
-                    .collect();
-
-                let config = config::Config {
-                    run_opts: context.opts.clone(),
-                    running,
-                    startup: context.startup_commands.as_ref().map(|commands| {
-                        commands
-                            .iter()
-                            .map(|c| context.opts.commands.iter().position(|x| x == c).unwrap())
-                            .collect()
-                    }),
-                };
+                let running: Vec<_> = list.iter().map(|c| c.command()).collect();
+                let config = config::Config::new(&context, &running);
                 config::dump(&config)?;
             }
             "k" => {

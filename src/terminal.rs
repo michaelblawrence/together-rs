@@ -102,6 +102,21 @@ impl Terminal {
             .unwrap()?;
         Some(&items[index])
     }
+    pub fn select_ordered<'a, T: std::fmt::Display>(
+        prompt: &'a str,
+        items: &'a [T],
+    ) -> Option<Vec<&'a T>> {
+        let mut opts_commands = vec![];
+        let sort = dialoguer::Sort::with_theme(&ColorfulTheme::default())
+            .with_prompt(prompt)
+            .items(items)
+            .interact_opt()
+            .unwrap()?;
+        for index in sort {
+            opts_commands.push(&items[index]);
+        }
+        Some(opts_commands)
+    }
     pub fn log(message: &str) {
         // print message with green colorized prefix
         println!("\x1b[32m[+]\x1b[0m {}", message);

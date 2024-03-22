@@ -74,11 +74,41 @@ pub struct Config {
     pub run_opts: crate::terminal::Run,
     pub running: Vec<usize>,
     pub startup: Option<Vec<usize>>,
+    pub version: Option<String>,
+}
+
+impl Config {
+    pub fn new(context: &RunContext, running: &[impl AsRef<str>]) -> Self {
+        let running = running
+            .iter()
+            .map(|c| {
+                context
+                    .opts
+                    .commands
+                    .iter()
+                    .position(|x| x == c.as_ref())
+                    .unwrap()
+            })
+            .collect();
+        let startup = context.startup_commands.as_ref().map(|commands| {
+            commands
+                .iter()
+                .map(|c| context.opts.commands.iter().position(|x| x == c).unwrap())
+                .collect()
+        });
+        Self {
+            run_opts: context.opts.clone(),
+            running,
+            startup,
+            version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        }
+    }
 }
 
 pub fn load_from(config_path: impl AsRef<std::path::Path>) -> TogetherResult<Config> {
     let config = std::fs::read_to_string(config_path)?;
     let config: Config = toml::from_str(&config)?;
+    check_version(&config);
     Ok(config)
 }
 
@@ -114,4 +144,31 @@ pub fn get_running_commands(config: &Config, running: &[usize]) -> Vec<String> {
 
 fn path() -> std::path::PathBuf {
     dirs::config_dir().unwrap().join(".together.toml")
+}
+
+fn check_version(config: &Config) {
+    let Some(version) = &config.version else {
+        log_err!(
+            "The configuration file was created with a different version of together. \
+            Please update together to the latest version."
+        );
+        std::process::exit(1);
+    };
+    let current_version = env!("CARGO_PKG_VERSION");
+    let current_version = semver::Version::parse(current_version).unwrap();
+    let config_version = semver::Version::parse(version).unwrap();
+    if current_version.major < config_version.major {
+        log_err!(
+            "The configuration file was created with a more recent version of together. \
+            Please update together to the latest version."
+        );
+        std::process::exit(1);
+    }
+
+    if current_version.minor < config_version.minor {
+        log!(
+            "Using configuration file created with a more recent version of together. \
+            Some features may not be available."
+        );
+    }
 }

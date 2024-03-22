@@ -41,7 +41,7 @@ pub struct Load {
 #[derive(Debug, clap::Parser)]
 pub struct Rerun {}
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, clap::Parser)]
+#[derive(Debug, Clone, clap::Parser)]
 pub struct Run {
     #[clap(
         last = true,

@@ -34,7 +34,7 @@ pub enum SubCommand {
 
 #[derive(Debug, clap::Parser)]
 pub struct Load {
-    #[clap(last = true, required = true, help = "Configuration file path.")]
+    #[clap(required = true, help = "Configuration file path.")]
     pub path: String,
 }
 
@@ -85,7 +85,7 @@ impl Terminal {
             .items(items)
             .defaults(&defaults[..])
             .interact();
-        let selections = multi_select.unwrap();
+        let selections = multi_select.map_err(map_dialoguer_err).unwrap();
         for index in selections {
             opts_commands.push(&items[index]);
         }
@@ -99,6 +99,7 @@ impl Terminal {
             .with_prompt(prompt)
             .items(items)
             .interact_opt()
+            .map_err(map_dialoguer_err)
             .unwrap()?;
         Some(&items[index])
     }
@@ -111,6 +112,7 @@ impl Terminal {
             .with_prompt(prompt)
             .items(items)
             .interact_opt()
+            .map_err(map_dialoguer_err)
             .unwrap()?;
         for index in sort {
             opts_commands.push(&items[index]);
@@ -124,6 +126,18 @@ impl Terminal {
     pub fn log_error(message: &str) {
         // print message with green colorized prefix
         eprintln!("\x1b[31m[!]\x1b[0m {}", message);
+    }
+}
+
+fn map_dialoguer_err(err: dialoguer::Error) -> ! {
+    let dialoguer::Error::IO(io) = err;
+    match io.kind() {
+        std::io::ErrorKind::Interrupted | std::io::ErrorKind::BrokenPipe => {
+            std::process::exit(0);
+        }
+        _ => {
+            panic!("Unexpected error: {}", io);
+        }
     }
 }
 

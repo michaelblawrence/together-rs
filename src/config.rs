@@ -61,7 +61,7 @@ pub fn to_run_context(opts: terminal::Opts) -> RunContext {
             let startup = config.startup.as_ref().map(|startup| {
                 startup
                     .iter()
-                    .filter_map(|&i| commands.get(i).map(|c| c.as_str().to_string()))
+                    .filter_map(|i| i.retrieve(commands).map(|c| c.as_str().to_string()))
                     .collect()
             });
             let running = Some(running).filter(|c| !c.is_empty());
@@ -83,8 +83,8 @@ pub fn to_run_context(opts: terminal::Opts) -> RunContext {
 pub struct Config {
     #[serde(flatten)]
     pub run_opts: commands::RunCommandsConfig,
-    pub running: Option<Vec<usize>>,
-    pub startup: Option<Vec<usize>>,
+    pub running: Option<Vec<commands::CommandIndex>>,
+    pub startup: Option<Vec<commands::CommandIndex>>,
     pub version: Option<String>,
 }
 
@@ -99,12 +99,21 @@ impl Config {
                     .iter()
                     .position(|x| x == c.as_ref())
                     .unwrap()
+                    .into()
             })
             .collect();
         let startup = context.startup_commands.as_ref().map(|commands| {
             commands
                 .iter()
-                .map(|c| context.opts.commands.iter().position(|x| x == c).unwrap())
+                .map(|c| {
+                    context
+                        .opts
+                        .commands
+                        .iter()
+                        .position(|x| x == c)
+                        .unwrap()
+                        .into()
+                })
                 .collect()
         });
         Self {
@@ -145,14 +154,12 @@ pub fn dump(config: &Config) -> TogetherResult<()> {
     Ok(())
 }
 
-pub fn get_running_commands(config: &Config, running: &[usize]) -> Vec<String> {
+pub fn get_running_commands(config: &Config, running: &[commands::CommandIndex]) -> Vec<String> {
     let commands: Vec<String> = running
         .iter()
         .filter_map(|index| {
-            config
-                .run_opts
-                .commands
-                .get(*index)
+            index
+                .retrieve(&config.run_opts.commands)
                 .map(|c| c.as_str().to_string())
         })
         .collect();
@@ -273,6 +280,31 @@ mod commands {
     impl From<&str> for CommandConfig {
         fn from(v: &str) -> Self {
             Self::Simple(v.to_string())
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(untagged)]
+    pub enum CommandIndex {
+        Simple(usize),
+        Alias(String),
+    }
+
+    impl CommandIndex {
+        pub fn retrieve<'a>(&self, commands: &'a [CommandConfig]) -> Option<&'a CommandConfig> {
+            match self {
+                Self::Simple(i) => commands.get(*i),
+                Self::Alias(alias) => commands
+                    .iter()
+                    .find(|c| c.alias() == Some(alias))
+                    .or_else(|| commands.iter().find(|c| c.as_str() == alias)),
+            }
+        }
+    }
+
+    impl From<usize> for CommandIndex {
+        fn from(v: usize) -> Self {
+            Self::Simple(v)
         }
     }
 }

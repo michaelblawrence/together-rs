@@ -12,7 +12,6 @@ pub enum ProcessAction {
     Kill(ProcessId),
     KillAll,
     List,
-    SetMute(bool),
 }
 
 #[derive(Debug)]
@@ -23,7 +22,6 @@ pub enum ProcessActionResponse {
     KilledAll,
     List(Vec<ProcessId>),
     Error(ProcessManagerError),
-    MuteSet,
 }
 
 #[derive(Debug)]
@@ -210,16 +208,6 @@ impl ProcessManager {
             ProcessAction::List => {
                 let list = self.processes.keys().cloned().collect();
                 ProcessActionResponse::List(list)
-            }
-            ProcessAction::SetMute(mute) => {
-                for (_, child) in self.processes.iter_mut() {
-                    if mute {
-                        child.mute();
-                    } else {
-                        child.unmute();
-                    }
-                }
-                ProcessActionResponse::MuteSet
             }
         }
     }

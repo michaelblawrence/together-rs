@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::{errors::TogetherResult, log, log_err, terminal};
 
 pub struct RunContext {
@@ -5,6 +7,7 @@ pub struct RunContext {
     pub override_commands: Option<Vec<String>>,
     pub startup_commands: Option<Vec<String>>,
     pub working_directory: Option<String>,
+    pub config_path: Option<std::path::PathBuf>,
 }
 
 pub fn to_run_context(opts: terminal::Opts) -> RunContext {
@@ -26,7 +29,8 @@ pub fn to_run_context(opts: terminal::Opts) -> RunContext {
                     std::process::exit(1);
                 })
                 .unwrap();
-            (config.run_opts.clone(), Some(config))
+            let config_path: PathBuf = path();
+            (config.run_opts.clone(), Some((config, config_path)))
         }
 
         terminal::SubCommand::Load(load) => {
@@ -41,12 +45,13 @@ pub fn to_run_context(opts: terminal::Opts) -> RunContext {
                     std::process::exit(1);
                 })
                 .unwrap();
-            (config.run_opts.clone(), Some(config))
+            let config_path: PathBuf = load.path.into();
+            (config.run_opts.clone(), Some((config, config_path)))
         }
     };
 
-    let (running, startup) = match config {
-        Some(config) => {
+    let (running, startup, config_path) = match config {
+        Some((config, config_path)) => {
             let commands = &config.run_opts.commands;
 
             let running = config.running.as_ref();
@@ -66,9 +71,9 @@ pub fn to_run_context(opts: terminal::Opts) -> RunContext {
             });
             let running = Some(running).filter(|c| !c.is_empty());
 
-            (running, startup)
+            (running, startup, Some(config_path))
         }
-        None => (None, None),
+        None => (None, None, None),
     };
 
     RunContext {
@@ -76,6 +81,7 @@ pub fn to_run_context(opts: terminal::Opts) -> RunContext {
         override_commands: running,
         startup_commands: startup,
         working_directory: opts.working_directory,
+        config_path,
     }
 }
 
@@ -138,9 +144,10 @@ pub fn load() -> TogetherResult<Config> {
     load_from(config_path)
 }
 
-pub fn save(config: &Config) -> TogetherResult<()> {
-    let config_path = path();
-    log!("Loading configuration from: {:?}", config_path);
+pub fn save(config: &Config, config_path: Option<&std::path::Path>) -> TogetherResult<()> {
+    let default_path = path();
+    let config_path = config_path.unwrap_or_else(|| default_path.as_path());
+    log!("Saving configuration to: {:?}", config_path);
     let config = toml::to_string_pretty(config)?;
     std::fs::write(config_path, config)?;
     Ok(())
@@ -197,7 +204,7 @@ fn check_version(config: &Config) {
     }
 }
 
-mod commands {
+pub mod commands {
     use serde::{Deserialize, Serialize};
 
     use crate::terminal;
@@ -305,6 +312,12 @@ mod commands {
     impl From<usize> for CommandIndex {
         fn from(v: usize) -> Self {
             Self::Simple(v)
+        }
+    }
+
+    impl From<&str> for CommandIndex {
+        fn from(v: &str) -> Self {
+            Self::Alias(v.to_string())
         }
     }
 }

@@ -29,6 +29,7 @@ fn run_command(context: RunContext) -> Result<(), errors::TogetherError> {
         override_commands,
         startup_commands,
         working_directory,
+        config_path,
     } = &context;
 
     let manager = manager::ProcessManager::new()
@@ -59,20 +60,7 @@ fn run_command(context: RunContext) -> Result<(), errors::TogetherError> {
                     &opts.commands,
                 )?;
                 let config = config::Config::new(&context, &commands);
-                // let config = config::Config {
-                //     run_opts: opts.clone(),
-                //     running: commands
-                //         .iter()
-                //         .map(|&c| opts.commands.iter().position(|x| x == c).unwrap())
-                //         .collect(),
-                //     startup: startup_commands.as_ref().map(|commands| {
-                //         commands
-                //             .iter()
-                //             .map(|c| opts.commands.iter().position(|x| x == c).unwrap())
-                //             .collect()
-                //     }),
-                // };
-                config::save(&config)?;
+                config::save(&config, config_path.as_deref())?;
                 commands
             }
         }
@@ -238,36 +226,30 @@ fn block_for_user_input(
 
 fn select_single_process<'a>(
     prompt: &'a str,
-    sender: &'a manager::ProcessManagerHandle,
+    _sender: &'a manager::ProcessManagerHandle,
     list: &'a [process::ProcessId],
 ) -> TogetherResult<Option<&'a process::ProcessId>> {
-    sender.send(ProcessAction::SetMute(true))?;
     let command = terminal::Terminal::select_single(prompt, list);
-    sender.send(ProcessAction::SetMute(false))?;
     Ok(command)
 }
 
 fn select_single_command<'a>(
     prompt: &'a str,
-    sender: &'a manager::ProcessManagerHandle,
+    _sender: &'a manager::ProcessManagerHandle,
     list: &'a [String],
 ) -> TogetherResult<Option<&'a String>> {
-    sender.send(ProcessAction::SetMute(true))?;
     let command = terminal::Terminal::select_single(prompt, list);
-    sender.send(ProcessAction::SetMute(false))?;
     Ok(command)
 }
 
 fn select_multiple_commands<'a>(
     prompt: &'a str,
-    sender: &'a manager::ProcessManagerHandle,
+    _sender: &'a manager::ProcessManagerHandle,
     list: &'a [String],
 ) -> TogetherResult<Vec<&'a String>> {
-    sender.send(ProcessAction::SetMute(true))?;
     let commands = terminal::Terminal::select_multiple(prompt, list);
     if commands.is_empty() {
         log!("No commands selected...");
     }
-    sender.send(ProcessAction::SetMute(false))?;
     Ok(commands)
 }

@@ -77,14 +77,6 @@ mod subprocess_impl {
             })
         }
 
-        pub fn mute(&self) {
-            // TODO: remove
-        }
-
-        pub fn unmute(&self) {
-            // TODO: remove
-        }
-
         pub fn kill(&mut self) -> TogetherResult<()> {
             fn check_err<T: Ord + Default>(num: T) -> std::io::Result<T> {
                 if num < T::default() {

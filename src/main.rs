@@ -88,13 +88,13 @@ fn run_command(context: RunContext) -> Result<(), errors::TogetherError> {
                             done.recv()?;
                             log!("Startup command '{}' completed", command);
                         }
-                        _ => {
-                            log_err!("Unexpected response from process manager");
+                        x => {
+                            log_err!("Unexpected response from process manager: {:?}", x);
                         }
                     }
                 }
-                _ => {
-                    log_err!("Unexpected response from process manager");
+                x => {
+                    log_err!("Unexpected response from process manager: {:?}", x);
                 }
             }
         }

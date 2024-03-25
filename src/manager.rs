@@ -15,6 +15,7 @@ pub enum ProcessAction {
     SetMute(bool),
 }
 
+#[derive(Debug)]
 pub enum ProcessActionResponse {
     Created(ProcessId),
     Waited(mpsc::Receiver<()>),

@@ -32,7 +32,7 @@ mod subprocess_impl {
         sync::{Arc, RwLock},
     };
 
-    use subprocess::{Exec, ExitStatus};
+    use subprocess::{ExitStatus, Popen, PopenConfig};
 
     use crate::{
         errors::{TogetherInternalError, TogetherResult},
@@ -48,25 +48,27 @@ mod subprocess_impl {
 
     impl SbProcess {
         pub fn spawn(command: &str, cwd: Option<&str>, raw: bool) -> TogetherResult<Self> {
-            let process = Exec::shell(command)
-                .stdout(if raw {
-                    subprocess::Redirection::None
-                } else {
-                    subprocess::Redirection::Pipe
-                })
-                .stderr(if raw {
-                    subprocess::Redirection::None
-                } else {
-                    subprocess::Redirection::Pipe
-                });
-
-            let process = if let Some(cwd) = cwd {
-                process.cwd(cwd)
+            let mut config = PopenConfig::default();
+            config.stdout = if raw {
+                subprocess::Redirection::None
             } else {
-                process
+                subprocess::Redirection::Pipe
             };
+            config.stderr = if raw {
+                subprocess::Redirection::None
+            } else {
+                subprocess::Redirection::Pipe
+            };
+            config.cwd = cwd.map(|s| s.into());
 
-            let popen = process.popen()?;
+            #[cfg(unix)]
+            {
+                config.setpgid = true;
+            }
+
+            let mut argv = os::SHELL.to_vec();
+            argv.push(command);
+            let popen = Popen::create(&argv, config)?;
             let mute = Arc::new(RwLock::new(false));
 
             Ok(Self {
@@ -90,7 +92,27 @@ mod subprocess_impl {
         }
 
         pub fn kill(&mut self) -> TogetherResult<()> {
-            Ok(self.popen.terminate()?)
+            fn check_err<T: Ord + Default>(num: T) -> std::io::Result<T> {
+                if num < T::default() {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(num)
+            }
+
+            #[cfg(windows)]
+            {
+                Ok(self.popen.terminate()?)
+            }
+            #[cfg(unix)]
+            {
+                self.popen.poll();
+                let pid = match self.popen.pid() {
+                    Some(pid) => pid as i32,
+                    _ => return Ok(()),
+                };
+                let _code = check_err(unsafe { libc::kill(-pid, libc::SIGINT) })?;
+                Ok(())
+            }
         }
 
         pub fn try_wait(&mut self) -> TogetherResult<Option<i32>> {
@@ -176,5 +198,15 @@ mod subprocess_impl {
                 }
             }
         }
+    }
+
+    #[cfg(unix)]
+    mod os {
+        pub const SHELL: [&str; 2] = ["sh", "-c"];
+    }
+
+    #[cfg(windows)]
+    mod os {
+        pub const SHELL: [&str; 2] = ["cmd.exe", "/c"];
     }
 }

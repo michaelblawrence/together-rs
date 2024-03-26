@@ -1,6 +1,6 @@
 [package]
 name = "together-rs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 authors = ["Michael Lawrence <mblawrence27@gmail.com>"]
@@ -10,7 +10,7 @@ keywords = ["execute", "process", "command", "cli", "interactive"]
 repository = "https://github.com/michaelblawrence/together-rs"
 
 [[bin]]
-name = "together_tmp"
+name = "together"
 path = "src/main.rs"
 
 [dependencies]

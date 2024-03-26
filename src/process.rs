@@ -77,20 +77,6 @@ mod subprocess_impl {
             })
         }
 
-        pub fn mute(&self) {
-            log!("Muting process {}", self.popen.pid().unwrap());
-            if let Some(mute) = &self.mute {
-                *mute.write().unwrap() = true;
-            }
-        }
-
-        pub fn unmute(&self) {
-            log!("Unmuting process {}", self.popen.pid().unwrap());
-            if let Some(mute) = &self.mute {
-                *mute.write().unwrap() = false;
-            }
-        }
-
         pub fn kill(&mut self) -> TogetherResult<()> {
             fn check_err<T: Ord + Default>(num: T) -> std::io::Result<T> {
                 if num < T::default() {

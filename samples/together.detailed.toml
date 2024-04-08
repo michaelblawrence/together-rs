@@ -1,0 +1,35 @@
+# This is a sample configuration file shows how to use `together` to handle a monorepo with multiple services
+version = "0.2.0"
+
+# these commands will run sequentially on together startup
+startup = ["yarn", "prisma", "api-types"]
+
+[[commands]]
+command = "yarn" # configured above to run as a startup command
+
+[[commands]]
+# configured above to run as a startup command
+alias = "prisma"
+command = "yarn workspace api-types prisma generate"
+
+[[commands]]
+# configured above to run as a startup command
+alias = "api-types"
+command = "yarn workspace api-types build"
+
+[[commands]]
+# this command will run once startup is complete (because of the `active` flag)
+alias = "server"
+command = "yarn workspace server dev"
+active = true
+
+[[commands]]
+# this command will run at the same time as the command above
+alias = "client"
+command = "yarn workspace client start"
+active = true
+
+[[commands]]
+# not configured to run on startup or with together the other commands - though it can be triggered manually at any time
+alias = "event-processor"
+command = "yarn workspace event-processor dev"

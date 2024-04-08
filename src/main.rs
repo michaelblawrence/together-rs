@@ -59,8 +59,6 @@ fn run_command(context: RunContext) -> Result<(), errors::TogetherError> {
                     &sender,
                     &opts.commands,
                 )?;
-                let config = config::Config::new(&context, &commands);
-                config::save(&config, config_path.as_deref())?;
                 commands
             }
         }

@@ -212,10 +212,20 @@ pub mod commands {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct RunCommandsConfig {
         pub commands: Vec<CommandConfig>,
+        #[serde(default)]
         pub all: bool,
+        #[serde(default)]
         pub exit_on_error: bool,
+        #[serde(default)]
         pub quit_on_completion: bool,
+        #[serde(default = "defaults::true_value")]
         pub raw: bool,
+    }
+
+    mod defaults {
+        pub fn true_value() -> bool {
+            true
+        }
     }
 
     impl From<terminal::Run> for RunCommandsConfig {

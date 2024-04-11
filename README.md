@@ -15,7 +15,7 @@ Alternatively, `together` can be installed using the pre-built binaries for your
 
 ```sh
 # For example, on macOS
-curl -L https://github.com/michaelblawrence/together-rs/releases/download/0.2.0/together-rs_0.2.0_x86_64-apple-darwin.zip -o together.zip
+curl -L https://github.com/michaelblawrence/together-rs/releases/download/0.2.1/together-rs_0.2.1_x86_64-apple-darwin.zip -o together.zip
 unzip together.zip
 mv together /usr/local/bin
 ```

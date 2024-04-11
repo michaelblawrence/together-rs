@@ -2,6 +2,17 @@
 
 A tool to run multiple commands in parallel selectively by an interactive prompt. Inspired by [concurrently](https://www.npmjs.com/package/concurrently).
 
+[![Crates.io][crates-badge]][crates-url]
+[![MIT licensed][mit-badge]][mit-url]
+[![Build Status][actions-badge]][actions-url]
+
+[crates-badge]: https://img.shields.io/crates/v/together-rs.svg
+[crates-url]: https://crates.io/crates/together-rs
+[mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
+[mit-url]: https://github.com/michaelblawrence/together-rs/blob/master/LICENSE
+[actions-badge]: https://github.com/michaelblawrence/together-rs/actions/workflows/rust.yml/badge.svg
+[actions-url]: https://github.com/michaelblawrence/together-rs/actions
+
 ## Installation
 
 <!-- You will need to have Rust installed to install `together` in the most straightforward way. You can install Rust by following the instructions on the [official website](https://www.rust-lang.org/tools/install). -->

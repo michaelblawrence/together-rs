@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use clap::CommandFactory;
+
 use crate::{errors::TogetherResult, log, log_err, terminal};
 
 pub struct RunContext {
@@ -12,12 +14,12 @@ pub struct RunContext {
 
 pub fn to_run_context(opts: terminal::Opts) -> RunContext {
     let (run_opts, config) = match opts.sub {
-        terminal::SubCommand::Run(run_opts) => {
+        Some(terminal::SubCommand::Run(run_opts)) => {
             let run_opts: commands::RunCommandsConfig = run_opts.into();
             (run_opts, None)
         }
 
-        terminal::SubCommand::Rerun(_) => {
+        Some(terminal::SubCommand::Rerun(_)) => {
             if opts.no_config {
                 log_err!("To use rerun, you must have a configuration file");
                 std::process::exit(1);
@@ -33,21 +35,38 @@ pub fn to_run_context(opts: terminal::Opts) -> RunContext {
             (config.run_opts.clone(), Some((config, config_path)))
         }
 
-        terminal::SubCommand::Load(load) => {
+        Some(terminal::SubCommand::Load(load)) => {
             if opts.no_config {
                 log_err!("To use rerun, you must have a configuration file");
                 std::process::exit(1);
             }
             let config = load_from(&load.path);
-            let config = config
+            let mut config = config
                 .map_err(|e| {
                     log_err!("Failed to load configuration from '{}': {}", load.path, e);
                     std::process::exit(1);
                 })
                 .unwrap();
             let config_path: PathBuf = load.path.into();
+            config.run_opts.init_only = load.init_only;
             (config.run_opts.clone(), Some((config, config_path)))
         }
+
+        None => (!opts.no_config)
+            .then_some(())
+            .and_then(|()| load_from("together.toml").ok())
+            .map_or_else(
+                || {
+                    _ = terminal::Opts::command().print_long_help();
+                    std::process::exit(1);
+                },
+                |config| {
+                    (
+                        config.run_opts.clone(),
+                        Some((config, "together.toml".into())),
+                    )
+                },
+            ),
     };
 
     let (running, startup, config_path) = match config {
@@ -220,6 +239,8 @@ pub mod commands {
         pub quit_on_completion: bool,
         #[serde(default = "defaults::true_value")]
         pub raw: bool,
+        #[serde(skip)]
+        pub init_only: bool,
     }
 
     mod defaults {
@@ -236,6 +257,7 @@ pub mod commands {
                 exit_on_error: run.exit_on_error,
                 quit_on_completion: run.quit_on_completion,
                 raw: run.raw,
+                init_only: run.init_only,
             }
         }
     }
@@ -252,6 +274,7 @@ pub mod commands {
                 exit_on_error: config.exit_on_error,
                 quit_on_completion: config.quit_on_completion,
                 raw: config.raw,
+                init_only: config.init_only,
             }
         }
     }

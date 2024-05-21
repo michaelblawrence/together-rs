@@ -61,10 +61,9 @@ pub fn to_run_context(opts: terminal::Opts) -> RunContext {
                     std::process::exit(1);
                 },
                 |config| {
-                    (
-                        config.run_opts.clone(),
-                        Some((config, "together.toml".into())),
-                    )
+                    let mut run_commands_config = config.run_opts.clone();
+                    run_commands_config.init_only = opts.init_only;
+                    (run_commands_config, Some((config, "together.toml".into())))
                 },
             ),
     };

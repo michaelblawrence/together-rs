@@ -15,6 +15,9 @@ pub struct Opts {
 
     #[clap(short, long = "cwd", help = "Directory to run commands in.")]
     pub working_directory: Option<String>,
+
+    #[clap(short, long, help = "Only run the startup commands.")]
+    pub init_only: bool,
 }
 
 #[derive(Debug, clap::Parser)]

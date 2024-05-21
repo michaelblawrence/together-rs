@@ -86,6 +86,11 @@ fn run_command(context: RunContext) -> Result<(), errors::TogetherError> {
         }
     }
 
+    if opts.init_only {
+        log!("Finished running startup commands, exiting...");
+        return Ok(());
+    }
+
     for command in selected_commands {
         sender.send(ProcessAction::Create(command.clone()))?;
     }

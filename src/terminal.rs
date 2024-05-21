@@ -8,13 +8,16 @@ use dialoguer::{theme::ColorfulTheme, MultiSelect};
 )]
 pub struct Opts {
     #[clap(subcommand)]
-    pub sub: SubCommand,
+    pub sub: Option<SubCommand>,
 
     #[clap(short, long, help = "Ignore configuration file.")]
     pub no_config: bool,
 
     #[clap(short, long = "cwd", help = "Directory to run commands in.")]
     pub working_directory: Option<String>,
+
+    #[clap(short, long, help = "Only run the startup commands.")]
+    pub init_only: bool,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -36,6 +39,9 @@ pub enum SubCommand {
 pub struct Load {
     #[clap(required = true, help = "Configuration file path.")]
     pub path: String,
+
+    #[clap(short, long, help = "Only run the startup commands.")]
+    pub init_only: bool,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -69,6 +75,8 @@ pub struct Run {
 
     #[clap(short, long, help = "Enable raw stdout/stderr output.")]
     pub raw: bool,
+
+    pub init_only: bool,
 }
 
 pub struct Terminal;

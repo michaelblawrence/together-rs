@@ -1,5 +1,5 @@
 use crate::{
-    config::{self, RunContext},
+    config::{self, StartTogetherOptions},
     errors::TogetherResult,
     log, log_err,
     manager::{self, ProcessAction},
@@ -14,7 +14,7 @@ struct InputState {
 }
 
 pub fn block_for_user_input(
-    context: &RunContext,
+    start_opts: &StartTogetherOptions,
     sender: manager::ProcessManagerHandle,
 ) -> TogetherResult<()> {
     use std::io::Write;
@@ -103,7 +103,7 @@ pub fn block_for_user_input(
             Key::Char('d') => {
                 let list = sender.list()?;
                 let running: Vec<_> = list.iter().map(|c| c.command()).collect();
-                let config = config::Config::new(&context, &running);
+                let config = config::Config::new(&start_opts, &running);
                 config::dump(&config)?;
             }
             Key::Char('k') => {
@@ -133,7 +133,7 @@ pub fn block_for_user_input(
                 let command = Terminal::select_single_command(
                     "Pick command to run, or press 'q' to cancel",
                     &sender,
-                    &context.opts.commands,
+                    &start_opts.opts.commands,
                 )?;
                 if let Some(command) = command {
                     sender.send(ProcessAction::Create(command.clone()))?;
@@ -143,7 +143,7 @@ pub fn block_for_user_input(
                 let commands = Terminal::select_multiple_commands(
                     "Pick commands to run, or press 'q' to cancel",
                     &sender,
-                    &context.opts.commands,
+                    &start_opts.opts.commands,
                 )?;
                 for command in commands {
                     sender.send(ProcessAction::Create(command.clone()))?;

@@ -4,7 +4,7 @@ use clap::CommandFactory;
 
 use crate::{errors::TogetherResult, log, log_err, terminal};
 
-pub struct RunContext {
+pub struct StartTogetherOptions {
     pub opts: terminal::Run,
     pub override_commands: Option<Vec<String>>,
     pub startup_commands: Option<Vec<String>>,
@@ -12,7 +12,7 @@ pub struct RunContext {
     pub config_path: Option<std::path::PathBuf>,
 }
 
-pub fn to_run_context(opts: terminal::Opts) -> RunContext {
+pub fn to_start_options(opts: terminal::Opts) -> StartTogetherOptions {
     let (run_opts, config) = match opts.sub {
         Some(terminal::SubCommand::Run(run_opts)) => {
             let run_opts: commands::RunCommandsConfig = run_opts.into();
@@ -94,7 +94,7 @@ pub fn to_run_context(opts: terminal::Opts) -> RunContext {
         None => (None, None, None),
     };
 
-    RunContext {
+    StartTogetherOptions {
         opts: run_opts.into(),
         override_commands: running,
         startup_commands: startup,
@@ -113,11 +113,11 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(context: &RunContext, running: &[impl AsRef<str>]) -> Self {
+    pub fn new(start_opts: &StartTogetherOptions, running: &[impl AsRef<str>]) -> Self {
         let running = running
             .iter()
             .map(|c| {
-                context
+                start_opts
                     .opts
                     .commands
                     .iter()
@@ -126,11 +126,11 @@ impl Config {
                     .into()
             })
             .collect();
-        let startup = context.startup_commands.as_ref().map(|commands| {
+        let startup = start_opts.startup_commands.as_ref().map(|commands| {
             commands
                 .iter()
                 .map(|c| {
-                    context
+                    start_opts
                         .opts
                         .commands
                         .iter()
@@ -141,7 +141,7 @@ impl Config {
                 .collect()
         });
         Self {
-            run_opts: context.opts.clone().into(),
+            run_opts: start_opts.opts.clone().into(),
             running: Some(running),
             startup,
             version: Some(env!("CARGO_PKG_VERSION").to_string()),

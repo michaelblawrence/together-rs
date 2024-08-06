@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use config::RunContext;
+use config::StartTogetherOptions;
 use errors::TogetherResult;
 use manager::ProcessAction;
 use terminal_ext::TerminalExt;
@@ -15,14 +15,14 @@ pub mod process;
 pub mod terminal;
 pub mod terminal_ext;
 
-pub fn start(context: RunContext) -> TogetherResult<()> {
-    let RunContext {
+pub fn start(start_opts: StartTogetherOptions) -> TogetherResult<()> {
+    let StartTogetherOptions {
         opts,
         override_commands,
         startup_commands,
         working_directory,
         config_path,
-    } = &context;
+    } = &start_opts;
 
     let manager = manager::ProcessManager::new()
         .with_raw_mode(opts.raw)
@@ -46,7 +46,7 @@ pub fn start(context: RunContext) -> TogetherResult<()> {
     execute_together_commands(&manager, selected_commands)?;
 
     let sender = manager.subscribe();
-    kb::block_for_user_input(&context, sender)?;
+    kb::block_for_user_input(&start_opts, sender)?;
 
     std::mem::drop(manager);
     Ok(())

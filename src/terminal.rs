@@ -1,4 +1,5 @@
 use dialoguer::{theme::ColorfulTheme, MultiSelect};
+use termion::color;
 
 #[derive(Debug, clap::Parser)]
 #[clap(
@@ -76,6 +77,7 @@ pub struct Run {
     #[clap(short, long, help = "Enable raw stdout/stderr output.")]
     pub raw: bool,
 
+    #[clap(short, long, help = "Only run the startup commands.")]
     pub init_only: bool,
 }
 
@@ -129,11 +131,21 @@ impl Terminal {
     }
     pub fn log(message: &str) {
         // print message with green colorized prefix
-        println!("\x1b[32m[+]\x1b[0m {}", message);
+        println!(
+            "{}[+] {}{}",
+            color::Fg(color::Green),
+            color::Fg(color::Reset),
+            message
+        );
     }
     pub fn log_error(message: &str) {
-        // print message with green colorized prefix
-        eprintln!("\x1b[31m[!]\x1b[0m {}", message);
+        // print message with red colorized prefix
+        eprintln!(
+            "{}[!] {}{}",
+            color::Fg(color::Red),
+            color::Fg(color::Reset),
+            message
+        );
     }
 }
 

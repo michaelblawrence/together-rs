@@ -9,7 +9,7 @@ use termion::color;
 )]
 pub struct TogetherArgs {
     #[clap(subcommand)]
-    pub sub: Option<ArgsCommands>,
+    pub command: Option<ArgsCommands>,
 
     #[clap(short, long, help = "Ignore configuration file.")]
     pub no_config: bool,
@@ -161,13 +161,15 @@ fn map_dialoguer_err(err: dialoguer::Error) -> ! {
     }
 }
 
-// macro for logging like println! but with a green prefix
+/// macro for logging like println! but with a green prefix
 #[macro_export]
 macro_rules! log {
     ($($arg:tt)*) => {
         $crate::terminal::Terminal::log(&format!($($arg)*));
     };
 }
+
+/// macro for logging like eprintln! but with a red prefix
 #[macro_export]
 macro_rules! log_err {
     ($($arg:tt)*) => {

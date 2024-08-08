@@ -103,7 +103,8 @@ pub fn block_for_user_input(
             Key::Char('d') => {
                 let list = sender.list()?;
                 let running: Vec<_> = list.iter().map(|c| c.command()).collect();
-                let config = config::TogetherConfigFile::new(&start_opts, &running);
+                let config = start_opts.config.clone();
+                let config = config.with_running(&running);
                 config::dump(&config)?;
             }
             Key::Char('k') => {
@@ -130,20 +131,22 @@ pub fn block_for_user_input(
                 }
             }
             Key::Char('t') => {
+                let all_commands = start_opts.config.start_options.as_commands();
                 let command = Terminal::select_single_command(
                     "Pick command to run, or press 'q' to cancel",
                     &sender,
-                    &start_opts.arg_command.commands,
+                    &all_commands,
                 )?;
                 if let Some(command) = command {
                     sender.send(ProcessAction::Create(command.clone()))?;
                 }
             }
             Key::Char('b') => {
+                let all_commands = start_opts.config.start_options.as_commands();
                 let commands = Terminal::select_multiple_commands(
                     "Pick commands to run, or press 'q' to cancel",
                     &sender,
-                    &start_opts.arg_command.commands,
+                    &all_commands,
                 )?;
                 for command in commands {
                     sender.send(ProcessAction::Create(command.clone()))?;

@@ -17,28 +17,26 @@ pub mod terminal_ext;
 
 pub fn start(options: StartTogetherOptions) -> TogetherResult<()> {
     let StartTogetherOptions {
-        arg_command,
-        override_commands,
-        startup_commands,
+        config,
         working_directory,
-        config_path,
+        ..
     } = &options;
 
     let manager = manager::ProcessManager::new()
-        .with_raw_mode(arg_command.raw)
-        .with_exit_on_error(arg_command.exit_on_error)
-        .with_quit_on_completion(arg_command.quit_on_completion)
+        .with_raw_mode(config.start_options.raw)
+        .with_exit_on_error(config.start_options.exit_on_error)
+        .with_quit_on_completion(config.start_options.quit_on_completion)
         .with_working_directory(working_directory.to_owned())
         .start();
 
     let sender = manager.subscribe();
     handle_ctrl_signal(sender);
 
-    let selected_commands = collect_together_commands(&manager, override_commands, arg_command)?;
+    let selected_commands = collect_together_commands(&manager, &config)?;
 
-    execute_startup_commands(startup_commands, &manager)?;
+    execute_startup_commands(&manager, &config)?;
 
-    if arg_command.init_only {
+    if config.start_options.init_only {
         log!("Finished running startup commands, exiting...");
         return Ok(());
     }
@@ -74,24 +72,24 @@ pub fn handle_ctrl_signal(sender: manager::ProcessManagerHandle) {
 
 fn collect_together_commands(
     manager: &manager::ProcessManagerHandle,
-    override_commands: &Option<Vec<String>>,
-    arg_command: &terminal::RunCommand,
+    config: &config::TogetherConfigFile,
 ) -> TogetherResult<Vec<String>> {
     let sender = manager.subscribe();
-    let selected_commands = match override_commands.as_ref() {
+    let selected_commands = match &config.running_commands() {
         Some(commands) => {
             log!("Running commands from configuration...");
-            commands.iter().cloned().collect()
+            commands.into_iter().map(|c| c.to_string()).collect()
         }
-        None if arg_command.all => {
+        None if config.start_options.all => {
             log!("Running all commands...");
-            arg_command.commands.iter().cloned().collect()
+            config.start_options.as_commands()
         }
         None => {
+            let all_commands = config.start_options.as_commands();
             let commands = terminal::Terminal::select_multiple_commands(
                 "Select commands to run together",
                 &sender,
-                &arg_command.commands,
+                &all_commands,
             )?;
             commands.into_iter().cloned().collect()
         }
@@ -100,15 +98,21 @@ fn collect_together_commands(
 }
 
 fn execute_startup_commands(
-    startup_commands: &Option<Vec<String>>,
     manager: &manager::ProcessManagerHandle,
+    config: &config::TogetherConfigFile,
 ) -> TogetherResult<()> {
-    let Some(commands) = startup_commands else {
+    let Some(startup) = &config.startup else {
         return Ok(());
     };
 
     log!("Running startup commands...");
     let sender = manager.subscribe();
+
+    let commands = startup
+        .iter()
+        .flat_map(|index| index.retrieve(&config.start_options.commands))
+        .map(|c| c.as_str().to_string())
+        .collect::<Vec<_>>();
 
     for command in commands {
         match sender.send(ProcessAction::Create(command.clone()))? {

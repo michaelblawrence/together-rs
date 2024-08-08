@@ -4,23 +4,22 @@ use clap::CommandFactory;
 
 use crate::{errors::TogetherResult, log, log_err, terminal};
 
+#[derive(Debug, Clone)]
 pub struct StartTogetherOptions {
-    pub arg_command: terminal::RunCommand,
-    pub override_commands: Option<Vec<String>>,
-    pub startup_commands: Option<Vec<String>>,
+    pub config: TogetherConfigFile,
     pub working_directory: Option<String>,
     pub config_path: Option<std::path::PathBuf>,
 }
 
-pub fn to_start_options(args: terminal::TogetherArgs) -> StartTogetherOptions {
-    let (config_start_opts, config) = match args.sub {
+pub fn to_start_options(command_args: terminal::TogetherArgs) -> StartTogetherOptions {
+    let (config, config_path) = match command_args.command {
         Some(terminal::ArgsCommands::Run(run_opts)) => {
             let config_start_opts: commands::ConfigFileStartOptions = run_opts.into();
-            (config_start_opts, None)
+            (TogetherConfigFile::new(config_start_opts), None)
         }
 
         Some(terminal::ArgsCommands::Rerun(_)) => {
-            if args.no_config {
+            if command_args.no_config {
                 log_err!("To use rerun, you must have a configuration file");
                 std::process::exit(1);
             }
@@ -32,11 +31,11 @@ pub fn to_start_options(args: terminal::TogetherArgs) -> StartTogetherOptions {
                 })
                 .unwrap();
             let config_path: PathBuf = path();
-            (config.start_options.clone(), Some((config, config_path)))
+            (config, Some(config_path))
         }
 
         Some(terminal::ArgsCommands::Load(load)) => {
-            if args.no_config {
+            if command_args.no_config {
                 log_err!("To use rerun, you must have a configuration file");
                 std::process::exit(1);
             }
@@ -49,10 +48,10 @@ pub fn to_start_options(args: terminal::TogetherArgs) -> StartTogetherOptions {
                 .unwrap();
             let config_path: PathBuf = load.path.into();
             config.start_options.init_only = load.init_only;
-            (config.start_options.clone(), Some((config, config_path)))
+            (config, Some(config_path))
         }
 
-        None => (!args.no_config)
+        None => (!command_args.no_config)
             .then_some(())
             .and_then(|()| load_from("together.toml").ok())
             .map_or_else(
@@ -62,48 +61,21 @@ pub fn to_start_options(args: terminal::TogetherArgs) -> StartTogetherOptions {
                 },
                 |config| {
                     let mut config_start_opts = config.start_options.clone();
-                    config_start_opts.init_only = args.init_only;
-                    (config_start_opts, Some((config, "together.toml".into())))
+                    config_start_opts.init_only = command_args.init_only;
+                    // (config_start_opts, Some((config, "together.toml".into())))
+                    (config, Some("together.toml".into()))
                 },
             ),
     };
 
-    let (running, startup, config_path) = match config {
-        Some((config, config_path)) => {
-            let commands = &config.start_options.commands;
-
-            let running = config.running.as_ref();
-            let running = running
-                .map(|running| get_running_commands(&config, running))
-                .unwrap_or_else(|| {
-                    let detailed_running = commands.iter().filter(|c| c.is_active());
-                    let running = detailed_running.map(|c| c.as_str().to_string());
-                    running.collect()
-                });
-
-            let startup = config.startup.as_ref().map(|startup| {
-                startup
-                    .iter()
-                    .filter_map(|i| i.retrieve(commands).map(|c| c.as_str().to_string()))
-                    .collect()
-            });
-            let running = Some(running).filter(|c| !c.is_empty());
-
-            (running, startup, Some(config_path))
-        }
-        None => (None, None, None),
-    };
-
     StartTogetherOptions {
-        arg_command: config_start_opts.into(),
-        override_commands: running,
-        startup_commands: startup,
-        working_directory: args.working_directory,
+        config,
+        working_directory: command_args.working_directory,
         config_path,
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TogetherConfigFile {
     #[serde(flatten)]
     pub start_options: commands::ConfigFileStartOptions,
@@ -113,38 +85,52 @@ pub struct TogetherConfigFile {
 }
 
 impl TogetherConfigFile {
-    pub fn new(start_opts: &StartTogetherOptions, running: &[impl AsRef<str>]) -> Self {
+    fn new(start_options: commands::ConfigFileStartOptions) -> Self {
+        Self {
+            start_options,
+            running: None,
+            startup: None,
+            version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        }
+    }
+
+    pub fn with_running(self, running: &[impl AsRef<str>]) -> Self {
         let running = running
             .iter()
             .map(|c| {
-                start_opts
-                    .arg_command
+                self.start_options
                     .commands
                     .iter()
-                    .position(|x| x == c.as_ref())
+                    .position(|x| x.matches(c.as_ref()))
                     .unwrap()
                     .into()
             })
             .collect();
-        let startup = start_opts.startup_commands.as_ref().map(|commands| {
-            commands
-                .iter()
-                .map(|c| {
-                    start_opts
-                        .arg_command
-                        .commands
-                        .iter()
-                        .position(|x| x == c)
-                        .unwrap()
-                        .into()
-                })
-                .collect()
-        });
+
         Self {
-            start_options: start_opts.arg_command.clone().into(),
             running: Some(running),
-            startup,
-            version: Some(env!("CARGO_PKG_VERSION").to_string()),
+            ..self
+        }
+    }
+
+    pub fn running_commands(&self) -> Option<Vec<&str>> {
+        let running = self
+            .running
+            .iter()
+            .flatten()
+            .flat_map(|index| index.retrieve(&self.start_options.commands))
+            .chain(self.start_options.commands.iter().filter(|c| c.is_active()))
+            .fold(vec![], |mut acc, c| {
+                if !acc.contains(&c) {
+                    acc.push(c);
+                }
+                acc
+            });
+
+        if running.is_empty() {
+            None
+        } else {
+            Some(running.into_iter().map(|c| c.as_str()).collect())
         }
     }
 }
@@ -284,7 +270,16 @@ pub mod commands {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    impl ConfigFileStartOptions {
+        pub fn as_commands(&self) -> Vec<String> {
+            self.commands
+                .iter()
+                .map(|c| c.as_str().to_string())
+                .collect()
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
     #[serde(untagged)]
     pub enum CommandConfig {
         Simple(String),

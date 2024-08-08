@@ -7,9 +7,9 @@ use termion::color;
     author = "Michael Lawrence",
     about = "Run multiple commands in parallel selectively by an interactive prompt."
 )]
-pub struct Opts {
+pub struct TogetherArgs {
     #[clap(subcommand)]
-    pub sub: Option<SubCommand>,
+    pub sub: Option<ArgsCommands>,
 
     #[clap(short, long, help = "Ignore configuration file.")]
     pub no_config: bool,
@@ -22,22 +22,22 @@ pub struct Opts {
 }
 
 #[derive(Debug, clap::Parser)]
-pub enum SubCommand {
+pub enum ArgsCommands {
     #[clap(
         name = "run",
         about = "Run multiple commands in parallel selectively by an interactive prompt."
     )]
-    Run(Run),
+    Run(RunCommand),
 
     #[clap(name = "rerun", about = "Rerun the last together session.")]
-    Rerun(Rerun),
+    Rerun(RerunCommand),
 
     #[clap(name = "load", about = "Run commands from a configuration file.")]
-    Load(Load),
+    Load(LoadCommand),
 }
 
 #[derive(Debug, clap::Parser)]
-pub struct Load {
+pub struct LoadCommand {
     #[clap(required = true, help = "Configuration file path.")]
     pub path: String,
 
@@ -46,10 +46,10 @@ pub struct Load {
 }
 
 #[derive(Debug, clap::Parser)]
-pub struct Rerun {}
+pub struct RerunCommand {}
 
 #[derive(Debug, Clone, clap::Parser)]
-pub struct Run {
+pub struct RunCommand {
     #[clap(
         last = true,
         required = true,

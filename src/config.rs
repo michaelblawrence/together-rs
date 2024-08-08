@@ -5,22 +5,22 @@ use clap::CommandFactory;
 use crate::{errors::TogetherResult, log, log_err, terminal};
 
 pub struct StartTogetherOptions {
-    pub opts: terminal::Run,
+    pub arg_command: terminal::RunCommand,
     pub override_commands: Option<Vec<String>>,
     pub startup_commands: Option<Vec<String>>,
     pub working_directory: Option<String>,
     pub config_path: Option<std::path::PathBuf>,
 }
 
-pub fn to_start_options(opts: terminal::Opts) -> StartTogetherOptions {
-    let (run_opts, config) = match opts.sub {
-        Some(terminal::SubCommand::Run(run_opts)) => {
-            let run_opts: commands::RunCommandsConfig = run_opts.into();
-            (run_opts, None)
+pub fn to_start_options(args: terminal::TogetherArgs) -> StartTogetherOptions {
+    let (config_start_opts, config) = match args.sub {
+        Some(terminal::ArgsCommands::Run(run_opts)) => {
+            let config_start_opts: commands::ConfigFileStartOptions = run_opts.into();
+            (config_start_opts, None)
         }
 
-        Some(terminal::SubCommand::Rerun(_)) => {
-            if opts.no_config {
+        Some(terminal::ArgsCommands::Rerun(_)) => {
+            if args.no_config {
                 log_err!("To use rerun, you must have a configuration file");
                 std::process::exit(1);
             }
@@ -32,11 +32,11 @@ pub fn to_start_options(opts: terminal::Opts) -> StartTogetherOptions {
                 })
                 .unwrap();
             let config_path: PathBuf = path();
-            (config.run_opts.clone(), Some((config, config_path)))
+            (config.start_options.clone(), Some((config, config_path)))
         }
 
-        Some(terminal::SubCommand::Load(load)) => {
-            if opts.no_config {
+        Some(terminal::ArgsCommands::Load(load)) => {
+            if args.no_config {
                 log_err!("To use rerun, you must have a configuration file");
                 std::process::exit(1);
             }
@@ -48,29 +48,29 @@ pub fn to_start_options(opts: terminal::Opts) -> StartTogetherOptions {
                 })
                 .unwrap();
             let config_path: PathBuf = load.path.into();
-            config.run_opts.init_only = load.init_only;
-            (config.run_opts.clone(), Some((config, config_path)))
+            config.start_options.init_only = load.init_only;
+            (config.start_options.clone(), Some((config, config_path)))
         }
 
-        None => (!opts.no_config)
+        None => (!args.no_config)
             .then_some(())
             .and_then(|()| load_from("together.toml").ok())
             .map_or_else(
                 || {
-                    _ = terminal::Opts::command().print_long_help();
+                    _ = terminal::TogetherArgs::command().print_long_help();
                     std::process::exit(1);
                 },
                 |config| {
-                    let mut run_commands_config = config.run_opts.clone();
-                    run_commands_config.init_only = opts.init_only;
-                    (run_commands_config, Some((config, "together.toml".into())))
+                    let mut config_start_opts = config.start_options.clone();
+                    config_start_opts.init_only = args.init_only;
+                    (config_start_opts, Some((config, "together.toml".into())))
                 },
             ),
     };
 
     let (running, startup, config_path) = match config {
         Some((config, config_path)) => {
-            let commands = &config.run_opts.commands;
+            let commands = &config.start_options.commands;
 
             let running = config.running.as_ref();
             let running = running
@@ -95,30 +95,30 @@ pub fn to_start_options(opts: terminal::Opts) -> StartTogetherOptions {
     };
 
     StartTogetherOptions {
-        opts: run_opts.into(),
+        arg_command: config_start_opts.into(),
         override_commands: running,
         startup_commands: startup,
-        working_directory: opts.working_directory,
+        working_directory: args.working_directory,
         config_path,
     }
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct Config {
+pub struct TogetherConfigFile {
     #[serde(flatten)]
-    pub run_opts: commands::RunCommandsConfig,
+    pub start_options: commands::ConfigFileStartOptions,
     pub running: Option<Vec<commands::CommandIndex>>,
     pub startup: Option<Vec<commands::CommandIndex>>,
     pub version: Option<String>,
 }
 
-impl Config {
+impl TogetherConfigFile {
     pub fn new(start_opts: &StartTogetherOptions, running: &[impl AsRef<str>]) -> Self {
         let running = running
             .iter()
             .map(|c| {
                 start_opts
-                    .opts
+                    .arg_command
                     .commands
                     .iter()
                     .position(|x| x == c.as_ref())
@@ -131,7 +131,7 @@ impl Config {
                 .iter()
                 .map(|c| {
                     start_opts
-                        .opts
+                        .arg_command
                         .commands
                         .iter()
                         .position(|x| x == c)
@@ -141,7 +141,7 @@ impl Config {
                 .collect()
         });
         Self {
-            run_opts: start_opts.opts.clone().into(),
+            start_options: start_opts.arg_command.clone().into(),
             running: Some(running),
             startup,
             version: Some(env!("CARGO_PKG_VERSION").to_string()),
@@ -149,20 +149,23 @@ impl Config {
     }
 }
 
-pub fn load_from(config_path: impl AsRef<std::path::Path>) -> TogetherResult<Config> {
+pub fn load_from(config_path: impl AsRef<std::path::Path>) -> TogetherResult<TogetherConfigFile> {
     let config = std::fs::read_to_string(config_path)?;
-    let config: Config = toml::from_str(&config)?;
+    let config: TogetherConfigFile = toml::from_str(&config)?;
     check_version(&config);
     Ok(config)
 }
 
-pub fn load() -> TogetherResult<Config> {
+pub fn load() -> TogetherResult<TogetherConfigFile> {
     let config_path = path();
     log!("Loading configuration from: {:?}", config_path);
     load_from(config_path)
 }
 
-pub fn save(config: &Config, config_path: Option<&std::path::Path>) -> TogetherResult<()> {
+pub fn save(
+    config: &TogetherConfigFile,
+    config_path: Option<&std::path::Path>,
+) -> TogetherResult<()> {
     let default_path = path();
     let config_path = config_path.unwrap_or_else(|| default_path.as_path());
     log!("Saving configuration to: {:?}", config_path);
@@ -171,7 +174,7 @@ pub fn save(config: &Config, config_path: Option<&std::path::Path>) -> TogetherR
     Ok(())
 }
 
-pub fn dump(config: &Config) -> TogetherResult<()> {
+pub fn dump(config: &TogetherConfigFile) -> TogetherResult<()> {
     let config = toml::to_string(config)?;
     println!("Configuration:");
     println!();
@@ -179,12 +182,15 @@ pub fn dump(config: &Config) -> TogetherResult<()> {
     Ok(())
 }
 
-pub fn get_running_commands(config: &Config, running: &[commands::CommandIndex]) -> Vec<String> {
+pub fn get_running_commands(
+    config: &TogetherConfigFile,
+    running: &[commands::CommandIndex],
+) -> Vec<String> {
     let commands: Vec<String> = running
         .iter()
         .filter_map(|index| {
             index
-                .retrieve(&config.run_opts.commands)
+                .retrieve(&config.start_options.commands)
                 .map(|c| c.as_str().to_string())
         })
         .collect();
@@ -195,7 +201,7 @@ fn path() -> std::path::PathBuf {
     dirs::config_dir().unwrap().join(".together.toml")
 }
 
-fn check_version(config: &Config) {
+fn check_version(config: &TogetherConfigFile) {
     let Some(version) = &config.version else {
         log_err!(
             "The configuration file was created with a different version of together. \
@@ -228,7 +234,7 @@ pub mod commands {
     use crate::terminal;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct RunCommandsConfig {
+    pub struct ConfigFileStartOptions {
         pub commands: Vec<CommandConfig>,
         #[serde(default)]
         pub all: bool,
@@ -248,21 +254,21 @@ pub mod commands {
         }
     }
 
-    impl From<terminal::Run> for RunCommandsConfig {
-        fn from(run: terminal::Run) -> Self {
+    impl From<terminal::RunCommand> for ConfigFileStartOptions {
+        fn from(args: terminal::RunCommand) -> Self {
             Self {
-                commands: run.commands.iter().map(|c| c.as_str().into()).collect(),
-                all: run.all,
-                exit_on_error: run.exit_on_error,
-                quit_on_completion: run.quit_on_completion,
-                raw: run.raw,
-                init_only: run.init_only,
+                commands: args.commands.iter().map(|c| c.as_str().into()).collect(),
+                all: args.all,
+                exit_on_error: args.exit_on_error,
+                quit_on_completion: args.quit_on_completion,
+                raw: args.raw,
+                init_only: args.init_only,
             }
         }
     }
 
-    impl From<RunCommandsConfig> for terminal::Run {
-        fn from(config: RunCommandsConfig) -> Self {
+    impl From<ConfigFileStartOptions> for terminal::RunCommand {
+        fn from(config: ConfigFileStartOptions) -> Self {
             Self {
                 commands: config
                     .commands

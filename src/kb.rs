@@ -103,7 +103,7 @@ pub fn block_for_user_input(
             Key::Char('d') => {
                 let list = sender.list()?;
                 let running: Vec<_> = list.iter().map(|c| c.command()).collect();
-                let config = config::Config::new(&start_opts, &running);
+                let config = config::TogetherConfigFile::new(&start_opts, &running);
                 config::dump(&config)?;
             }
             Key::Char('k') => {
@@ -133,7 +133,7 @@ pub fn block_for_user_input(
                 let command = Terminal::select_single_command(
                     "Pick command to run, or press 'q' to cancel",
                     &sender,
-                    &start_opts.opts.commands,
+                    &start_opts.arg_command.commands,
                 )?;
                 if let Some(command) = command {
                     sender.send(ProcessAction::Create(command.clone()))?;
@@ -143,7 +143,7 @@ pub fn block_for_user_input(
                 let commands = Terminal::select_multiple_commands(
                     "Pick commands to run, or press 'q' to cancel",
                     &sender,
-                    &start_opts.opts.commands,
+                    &start_opts.arg_command.commands,
                 )?;
                 for command in commands {
                     sender.send(ProcessAction::Create(command.clone()))?;

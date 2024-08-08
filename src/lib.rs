@@ -15,30 +15,30 @@ pub mod process;
 pub mod terminal;
 pub mod terminal_ext;
 
-pub fn start(start_opts: StartTogetherOptions) -> TogetherResult<()> {
+pub fn start(options: StartTogetherOptions) -> TogetherResult<()> {
     let StartTogetherOptions {
-        opts,
+        arg_command,
         override_commands,
         startup_commands,
         working_directory,
         config_path,
-    } = &start_opts;
+    } = &options;
 
     let manager = manager::ProcessManager::new()
-        .with_raw_mode(opts.raw)
-        .with_exit_on_error(opts.exit_on_error)
-        .with_quit_on_completion(opts.quit_on_completion)
+        .with_raw_mode(arg_command.raw)
+        .with_exit_on_error(arg_command.exit_on_error)
+        .with_quit_on_completion(arg_command.quit_on_completion)
         .with_working_directory(working_directory.to_owned())
         .start();
 
     let sender = manager.subscribe();
     handle_ctrl_signal(sender);
 
-    let selected_commands = collect_together_commands(&manager, override_commands, opts)?;
+    let selected_commands = collect_together_commands(&manager, override_commands, arg_command)?;
 
     execute_startup_commands(startup_commands, &manager)?;
 
-    if opts.init_only {
+    if arg_command.init_only {
         log!("Finished running startup commands, exiting...");
         return Ok(());
     }
@@ -46,7 +46,7 @@ pub fn start(start_opts: StartTogetherOptions) -> TogetherResult<()> {
     execute_together_commands(&manager, selected_commands)?;
 
     let sender = manager.subscribe();
-    kb::block_for_user_input(&start_opts, sender)?;
+    kb::block_for_user_input(&options, sender)?;
 
     std::mem::drop(manager);
     Ok(())
@@ -75,7 +75,7 @@ pub fn handle_ctrl_signal(sender: manager::ProcessManagerHandle) {
 fn collect_together_commands(
     manager: &manager::ProcessManagerHandle,
     override_commands: &Option<Vec<String>>,
-    opts: &terminal::Run,
+    arg_command: &terminal::RunCommand,
 ) -> TogetherResult<Vec<String>> {
     let sender = manager.subscribe();
     let selected_commands = match override_commands.as_ref() {
@@ -83,15 +83,15 @@ fn collect_together_commands(
             log!("Running commands from configuration...");
             commands.iter().cloned().collect()
         }
-        None if opts.all => {
+        None if arg_command.all => {
             log!("Running all commands...");
-            opts.commands.iter().cloned().collect()
+            arg_command.commands.iter().cloned().collect()
         }
         None => {
             let commands = terminal::Terminal::select_multiple_commands(
                 "Select commands to run together",
                 &sender,
-                &opts.commands,
+                &arg_command.commands,
             )?;
             commands.into_iter().cloned().collect()
         }

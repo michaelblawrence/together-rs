@@ -11,6 +11,7 @@ use crate::{
 struct InputState {
     requested_quit: bool,
     awaiting_quit_command: bool,
+    last_command: Option<String>,
 }
 
 pub fn block_for_user_input(
@@ -20,11 +21,11 @@ pub fn block_for_user_input(
     use std::io::Write;
     use termion::event::Key;
     use termion::input::TermRead;
-    use termion::raw::IntoRawMode;
 
     let mut state = InputState::default();
 
-    let mut stdout = std::io::stdout().into_raw_mode().unwrap();
+    // let mut stdout = std::io::stdout().into_raw_mode().unwrap();
+    let mut stdout = std::io::stdout();
     let stdin = std::io::stdin();
 
     for k in stdin.keys() {
@@ -61,7 +62,9 @@ pub fn block_for_user_input(
 
                 println!();
                 println!("Press 't' to trigger a one-time run");
-                println!("Press 'b' to batch trigger a one-time run");
+                println!("Press '.' to re-trigger the last one-time run");
+                println!("Press 'b' to batch trigger commands by recipe");
+                println!("Press 'z' to switch to running a single recipe");
                 println!("Press 'k' to kill a running command");
                 println!("Press 'r' to restart a running command");
                 println!("Press 'l' to list all running commands");
@@ -132,24 +135,63 @@ pub fn block_for_user_input(
             }
             Key::Char('t') => {
                 let all_commands = start_opts.config.start_options.as_commands();
-                let command = Terminal::select_single_command(
+                let command = Terminal::select_single_item(
                     "Pick command to run, or press 'q' to cancel",
                     &sender,
                     &all_commands,
                 )?;
                 if let Some(command) = command {
                     sender.send(ProcessAction::Create(command.clone()))?;
+                    state.last_command = Some(command.clone());
+                }
+            }
+            Key::Char('.') => {
+                if let Some(command) = &state.last_command {
+                    sender.send(ProcessAction::Create(command.clone()))?;
+                } else {
+                    log!("No last command to re-trigger");
                 }
             }
             Key::Char('b') => {
-                let all_commands = start_opts.config.start_options.as_commands();
-                let commands = Terminal::select_multiple_commands(
-                    "Pick commands to run, or press 'q' to cancel",
+                let all_recipes = config::get_unique_recipes(&start_opts.config.start_options);
+                let all_recipes = all_recipes.into_iter().cloned().collect::<Vec<_>>();
+                let recipes = Terminal::select_multiple_recipes(
+                    "Select one or more recipes to start running, or press 'q' to cancel",
                     &sender,
-                    &all_commands,
+                    &all_recipes,
                 )?;
+                let commands =
+                    config::collect_commands_by_recipes(&start_opts.config.start_options, &recipes);
                 for command in commands {
                     sender.send(ProcessAction::Create(command.clone()))?;
+                }
+            }
+            Key::Char('z') => {
+                let all_recipes = config::get_unique_recipes(&start_opts.config.start_options);
+                let all_recipes = all_recipes.into_iter().cloned().collect::<Vec<_>>();
+                let recipe = Terminal::select_single_item(
+                    "Select a recipe to start running, or press 'q' to cancel (note: this will stop all other commands)",
+                    &sender,
+                    &all_recipes,
+                )?;
+                if let Some(recipe) = recipe {
+                    let recipe = recipe.clone();
+                    let recipe_commands = config::collect_commands_by_recipes(
+                        &start_opts.config.start_options,
+                        &[recipe],
+                    );
+                    let list = sender.list()?;
+                    let kill_commands: Vec<_> = list
+                        .iter()
+                        .filter(|c| !recipe_commands.contains(&c.command().to_string()))
+                        .collect();
+
+                    for command in kill_commands {
+                        sender.send(ProcessAction::Kill(command.clone()))?;
+                    }
+                    for command in recipe_commands {
+                        sender.send(ProcessAction::Create(command.clone()))?;
+                    }
                 }
             }
             Key::Char(c) => {

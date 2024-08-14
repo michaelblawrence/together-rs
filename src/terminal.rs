@@ -19,6 +19,14 @@ pub struct TogetherArgs {
 
     #[clap(short, long, help = "Only run the startup commands.")]
     pub init_only: bool,
+
+    #[clap(
+        short,
+        long,
+        help = "Run all commands tagged under provided recipe(s). Use comma to separate multiple recipes.",
+        value_delimiter = ','
+    )]
+    pub recipes: Option<Vec<String>>,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -43,6 +51,14 @@ pub struct LoadCommand {
 
     #[clap(short, long, help = "Only run the startup commands.")]
     pub init_only: bool,
+
+    #[clap(
+        short,
+        long,
+        help = "Run all commands tagged under provided recipe(s). Use comma to separate multiple recipes.",
+        value_delimiter = ','
+    )]
+    pub recipes: Option<Vec<String>>,
 }
 
 #[derive(Debug, clap::Parser)]

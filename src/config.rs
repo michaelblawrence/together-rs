@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
 use clap::CommandFactory;
 
@@ -8,14 +8,21 @@ use crate::{errors::TogetherResult, log, log_err, terminal};
 pub struct StartTogetherOptions {
     pub config: TogetherConfigFile,
     pub working_directory: Option<String>,
+    pub active_recipes: Option<Vec<String>>,
     pub config_path: Option<std::path::PathBuf>,
 }
 
 pub fn to_start_options(command_args: terminal::TogetherArgs) -> StartTogetherOptions {
-    let (config, config_path) = match command_args.command {
+    #[derive(Default)]
+    struct StartMeta {
+        config_path: Option<std::path::PathBuf>,
+        recipes: Option<Vec<String>>,
+    }
+    let (config, meta) = match command_args.command {
         Some(terminal::ArgsCommands::Run(run_opts)) => {
             let config_start_opts: commands::ConfigFileStartOptions = run_opts.into();
-            (TogetherConfigFile::new(config_start_opts), None)
+            let meta = StartMeta::default();
+            (TogetherConfigFile::new(config_start_opts), meta)
         }
 
         Some(terminal::ArgsCommands::Rerun(_)) => {
@@ -31,7 +38,11 @@ pub fn to_start_options(command_args: terminal::TogetherArgs) -> StartTogetherOp
                 })
                 .unwrap();
             let config_path: PathBuf = path();
-            (config, Some(config_path))
+            let meta = StartMeta {
+                config_path: Some(config_path),
+                ..StartMeta::default()
+            };
+            (config, meta)
         }
 
         Some(terminal::ArgsCommands::Load(load)) => {
@@ -48,7 +59,11 @@ pub fn to_start_options(command_args: terminal::TogetherArgs) -> StartTogetherOp
                 .unwrap();
             let config_path: PathBuf = load.path.into();
             config.start_options.init_only = load.init_only;
-            (config, Some(config_path))
+            let meta = StartMeta {
+                config_path: Some(config_path),
+                recipes: load.recipes,
+            };
+            (config, meta)
         }
 
         None => (!command_args.no_config)
@@ -62,8 +77,11 @@ pub fn to_start_options(command_args: terminal::TogetherArgs) -> StartTogetherOp
                 |config| {
                     let mut config_start_opts = config.start_options.clone();
                     config_start_opts.init_only = command_args.init_only;
-                    // (config_start_opts, Some((config, "together.toml".into())))
-                    (config, Some("together.toml".into()))
+                    let meta = StartMeta {
+                        config_path: Some("together.toml".into()),
+                        recipes: command_args.recipes,
+                    };
+                    (config, meta)
                 },
             ),
     };
@@ -71,7 +89,8 @@ pub fn to_start_options(command_args: terminal::TogetherArgs) -> StartTogetherOp
     StartTogetherOptions {
         config,
         working_directory: command_args.working_directory,
-        config_path,
+        active_recipes: meta.recipes,
+        config_path: meta.config_path,
     }
 }
 
@@ -183,6 +202,27 @@ pub fn get_running_commands(
     commands
 }
 
+pub fn get_unique_recipes(start_options: &commands::ConfigFileStartOptions) -> HashSet<&String> {
+    start_options
+        .commands
+        .iter()
+        .flat_map(|c| c.recipes())
+        .collect::<HashSet<_>>()
+}
+
+pub fn collect_commands_by_recipes(
+    start_options: &commands::ConfigFileStartOptions,
+    recipes: &[impl AsRef<str>],
+) -> Vec<String> {
+    let selected_commands = start_options
+        .commands
+        .iter()
+        .filter(|c| recipes.iter().any(|r| c.contains_recipe(r.as_ref())))
+        .map(|c| c.as_str().to_string())
+        .collect();
+    selected_commands
+}
+
 fn path() -> std::path::PathBuf {
     dirs::config_dir().unwrap().join(".together.toml")
 }
@@ -287,6 +327,7 @@ pub mod commands {
             command: String,
             alias: Option<String>,
             active: Option<bool>,
+            recipes: Option<Vec<String>>,
         },
     }
 
@@ -314,6 +355,23 @@ pub mod commands {
 
         pub fn matches(&self, other: &str) -> bool {
             self.as_str() == other || self.alias().map_or(false, |a| a == other)
+        }
+
+        pub fn recipes(&self) -> &[String] {
+            match self {
+                Self::Simple(_) => &[],
+                Self::Detailed { recipes, .. } => recipes.as_deref().unwrap_or(&[]),
+            }
+        }
+
+        pub fn contains_recipe(&self, recipe: &str) -> bool {
+            let recipe = recipe.trim();
+            match self {
+                Self::Simple(_) => false,
+                Self::Detailed { recipes, .. } => recipes
+                    .as_ref()
+                    .map_or(false, |r| r.iter().any(|x| x.eq_ignore_ascii_case(recipe))),
+            }
         }
     }
 

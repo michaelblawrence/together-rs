@@ -32,16 +32,15 @@ pub fn start(options: StartTogetherOptions) -> TogetherResult<()> {
     let sender = manager.subscribe();
     handle_ctrl_signal(sender);
 
-    let selected_commands = collect_together_commands(&manager, &config)?;
+    let selected_commands = collect_together_commands(&manager, &options)?;
 
     execute_startup_commands(&manager, &config)?;
 
     if config.start_options.init_only {
-        log!("Finished running startup commands, exiting...");
-        return Ok(());
+        log!("Finished running startup commands, waiting for user input... (press '?' for help)");
+    } else {
+        execute_together_commands(&manager, selected_commands)?;
     }
-
-    execute_together_commands(&manager, selected_commands)?;
 
     let sender = manager.subscribe();
     kb::block_for_user_input(&options, sender)?;
@@ -72,9 +71,23 @@ pub fn handle_ctrl_signal(sender: manager::ProcessManagerHandle) {
 
 fn collect_together_commands(
     manager: &manager::ProcessManagerHandle,
-    config: &config::TogetherConfigFile,
+    options: &StartTogetherOptions,
 ) -> TogetherResult<Vec<String>> {
-    let sender = manager.subscribe();
+    if let Some(recipes) = &options.active_recipes {
+        log!("Running commands from recipes...");
+        let config_opts = &options.config.start_options;
+
+        let selected_commands = config::collect_commands_by_recipes(&config_opts, recipes);
+
+        log!("Commands selected by recipes:");
+        for command in &selected_commands {
+            log!("  - {}", command);
+        }
+
+        return Ok(selected_commands);
+    }
+
+    let config = &options.config;
     let selected_commands = match &config.running_commands() {
         Some(commands) => {
             log!("Running commands from configuration...");
@@ -86,6 +99,7 @@ fn collect_together_commands(
         }
         None => {
             let all_commands = config.start_options.as_commands();
+            let sender = manager.subscribe();
             let commands = terminal::Terminal::select_multiple_commands(
                 "Select commands to run together",
                 &sender,

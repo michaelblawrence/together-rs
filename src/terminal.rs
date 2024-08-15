@@ -20,6 +20,9 @@ pub struct TogetherArgs {
     #[clap(short, long, help = "Only run the startup commands.")]
     pub init_only: bool,
 
+    #[clap(short, long = "quiet", help = "Quiet mode for startup commands.")]
+    pub quiet_startup: bool,
+
     #[clap(
         short,
         long,

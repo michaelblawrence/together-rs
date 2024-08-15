@@ -3,11 +3,12 @@ use std::{collections::HashMap, sync::mpsc};
 use crate::{
     errors::{TogetherError, TogetherInternalError, TogetherResult},
     log, log_err,
-    process::{Process, ProcessId},
+    process::{Process, ProcessId, ProcessStdio},
 };
 
 pub enum ProcessAction {
     Create(String),
+    CreateAdvanced(String, CreateOptions),
     Wait(ProcessId),
     Kill(ProcessId),
     KillAll,
@@ -30,6 +31,19 @@ pub enum ProcessManagerError {
     KillChildFailed(String),
     NoSuchProcess,
     Unknown,
+}
+
+#[derive(Default, Clone)]
+pub struct CreateOptions {
+    pub stdio: Option<ProcessStdio>,
+    pub cwd: Option<String>,
+}
+
+impl CreateOptions {
+    pub fn with_stderr_only(mut self) -> Self {
+        self.stdio = Some(ProcessStdio::StderrOnly);
+        self
+    }
 }
 
 pub struct Message(ProcessAction, mpsc::Sender<ProcessActionResponse>);
@@ -150,20 +164,16 @@ impl ProcessManager {
                 let id = self.index;
                 self.index += 1;
 
-                match Process::spawn(&command, self.cwd.as_deref(), self.raw_stdio) {
-                    Ok(mut child) => {
-                        let id = ProcessId::new(id, command);
-                        if !self.raw_stdio {
-                            child.forward_stdio(&id);
-                        }
-                        self.processes.insert(id.clone(), child);
-                        log!("Started {}", id);
-                        ProcessActionResponse::Created(id)
-                    }
-                    Err(e) => ProcessActionResponse::Error(ProcessManagerError::SpawnChildFailed(
-                        e.to_string(),
-                    )),
-                }
+                self.start_new_process(command, self.cwd.clone(), self.raw_stdio.into(), id)
+            }
+            ProcessAction::CreateAdvanced(command, options) => {
+                let id = self.index;
+                self.index += 1;
+
+                let raw = options.stdio.unwrap_or(self.raw_stdio.into());
+                let cwd = options.cwd.clone().or_else(|| self.cwd.clone());
+
+                self.start_new_process(command, cwd, raw, id)
             }
             ProcessAction::Wait(id) => match self.processes.get(&id) {
                 Some(_) => {
@@ -212,6 +222,29 @@ impl ProcessManager {
         }
     }
 
+    fn start_new_process(
+        &mut self,
+        command: String,
+        cwd: Option<String>,
+        stdio: ProcessStdio,
+        id: u32,
+    ) -> ProcessActionResponse {
+        match Process::spawn(&command, cwd.as_deref(), stdio) {
+            Ok(mut child) => {
+                let id = ProcessId::new(id, command);
+                if let ProcessStdio::Inherit = stdio {
+                    child.forward_stdio(&id);
+                }
+                self.processes.insert(id.clone(), child);
+                log!("Started  {}", id);
+                ProcessActionResponse::Created(id)
+            }
+            Err(e) => {
+                ProcessActionResponse::Error(ProcessManagerError::SpawnChildFailed(e.to_string()))
+            }
+        }
+    }
+
     fn cleanup_dead_processes(&mut self) {
         let mut remove = vec![];
         let mut kill_all = false;
@@ -237,7 +270,7 @@ impl ProcessManager {
                 handle.send(()).unwrap();
             }
             self.processes.remove(&id);
-            log!("Exited {}", id);
+            log!("Finished {}", id);
         }
         if kill_all {
             for (id, mut child) in self.processes.drain() {

@@ -128,8 +128,15 @@ fn execute_startup_commands(
         .map(|c| c.as_str().to_string())
         .collect::<Vec<_>>();
 
+    let opts = manager::CreateOptions::default();
+    let opts = if config.start_options.quiet_startup {
+        opts.with_stderr_only()
+    } else {
+        opts
+    };
+
     for command in commands {
-        match sender.send(ProcessAction::Create(command.clone()))? {
+        match sender.send(ProcessAction::CreateAdvanced(command.clone(), opts.clone()))? {
             ProcessActionResponse::Created(id) => match sender.send(ProcessAction::Wait(id))? {
                 ProcessActionResponse::Waited(done) => {
                     done.recv()?;

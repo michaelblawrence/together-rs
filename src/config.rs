@@ -20,8 +20,9 @@ pub fn to_start_options(command_args: terminal::TogetherArgs) -> StartTogetherOp
     }
     let (config, meta) = match command_args.command {
         Some(terminal::ArgsCommands::Run(run_opts)) => {
-            let config_start_opts: commands::ConfigFileStartOptions = run_opts.into();
+            let mut config_start_opts: commands::ConfigFileStartOptions = run_opts.into();
             let meta = StartMeta::default();
+            config_start_opts.quiet_startup = command_args.quiet_startup;
             (TogetherConfigFile::new(config_start_opts), meta)
         }
 
@@ -59,6 +60,7 @@ pub fn to_start_options(command_args: terminal::TogetherArgs) -> StartTogetherOp
                 .unwrap();
             let config_path: PathBuf = load.path.into();
             config.start_options.init_only = load.init_only;
+            config.start_options.quiet_startup = command_args.quiet_startup;
             let meta = StartMeta {
                 config_path: Some(config_path),
                 recipes: load.recipes,
@@ -74,9 +76,10 @@ pub fn to_start_options(command_args: terminal::TogetherArgs) -> StartTogetherOp
                     _ = terminal::TogetherArgs::command().print_long_help();
                     std::process::exit(1);
                 },
-                |config| {
-                    let mut config_start_opts = config.start_options.clone();
+                |mut config| {
+                    let config_start_opts = &mut config.start_options;
                     config_start_opts.init_only = command_args.init_only;
+                    config_start_opts.quiet_startup = command_args.quiet_startup;
                     let meta = StartMeta {
                         config_path: Some("together.toml".into()),
                         recipes: command_args.recipes,
@@ -240,7 +243,7 @@ fn check_version(config: &TogetherConfigFile) {
     let config_version = semver::Version::parse(version).unwrap();
     if current_version.major < config_version.major {
         log_err!(
-            "The configuration file was created with a more recent version of together. \
+            "The configuration file was created with a more recent version of together (>={config_version}). \
             Please update together to the latest version."
         );
         std::process::exit(1);
@@ -248,7 +251,7 @@ fn check_version(config: &TogetherConfigFile) {
 
     if current_version.minor < config_version.minor {
         log!(
-            "Using configuration file created with a more recent version of together. \
+            "Using configuration file created with a more recent version of together (>={config_version}). \
             Some features may not be available."
         );
     }
@@ -268,6 +271,8 @@ pub mod commands {
         pub exit_on_error: bool,
         #[serde(default)]
         pub quit_on_completion: bool,
+        #[serde(default)]
+        pub quiet_startup: bool,
         #[serde(default = "defaults::true_value")]
         pub raw: bool,
         #[serde(skip)]
@@ -287,6 +292,7 @@ pub mod commands {
                 all: args.all,
                 exit_on_error: args.exit_on_error,
                 quit_on_completion: args.quit_on_completion,
+                quiet_startup: false,
                 raw: args.raw,
                 init_only: args.init_only,
             }

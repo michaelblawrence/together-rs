@@ -26,6 +26,23 @@ impl std::fmt::Display for ProcessId {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum ProcessStdio {
+    Inherit,
+    Raw,
+    StderrOnly,
+}
+
+impl From<bool> for ProcessStdio {
+    fn from(b: bool) -> Self {
+        if b {
+            Self::Raw
+        } else {
+            Self::Inherit
+        }
+    }
+}
+
 mod subprocess_impl {
     use std::{
         io::BufRead,
@@ -39,7 +56,7 @@ mod subprocess_impl {
         log, log_err,
     };
 
-    use super::ProcessId;
+    use super::{ProcessId, ProcessStdio};
 
     pub struct SbProcess {
         popen: subprocess::Popen,
@@ -47,17 +64,19 @@ mod subprocess_impl {
     }
 
     impl SbProcess {
-        pub fn spawn(command: &str, cwd: Option<&str>, raw: bool) -> TogetherResult<Self> {
+        pub fn spawn(
+            command: &str,
+            cwd: Option<&str>,
+            stdio: ProcessStdio,
+        ) -> TogetherResult<Self> {
             let mut config = PopenConfig::default();
-            config.stdout = if raw {
-                subprocess::Redirection::None
-            } else {
-                subprocess::Redirection::Pipe
+            config.stdout = match stdio {
+                ProcessStdio::Raw => subprocess::Redirection::None,
+                _ => subprocess::Redirection::Pipe,
             };
-            config.stderr = if raw {
-                subprocess::Redirection::None
-            } else {
-                subprocess::Redirection::Pipe
+            config.stderr = match stdio {
+                ProcessStdio::Raw | ProcessStdio::StderrOnly => subprocess::Redirection::None,
+                _ => subprocess::Redirection::Pipe,
             };
             config.cwd = cwd.map(|s| s.into());
 

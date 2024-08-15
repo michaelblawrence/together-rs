@@ -27,3 +27,4 @@ toml = "0.8.10"
 
 [features]
 default = ["termion"]
+windows = []

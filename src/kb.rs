@@ -178,8 +178,10 @@ pub fn block_for_user_input(
                     }
                 }
             }
+            Key::Char('\n') => {}
             Key::Char(c) => {
-                log_err!("Unknown command: {}", c);
+                log_err!("Unknown command: '{}'", c);
+                log!("Press 'h' or '?' for help");
             }
             _ => {}
         }

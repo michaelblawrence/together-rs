@@ -1,5 +1,4 @@
 use dialoguer::{theme::ColorfulTheme, MultiSelect};
-use termion::color;
 
 #[derive(Debug, clap::Parser)]
 #[clap(
@@ -157,21 +156,11 @@ impl Terminal {
     }
     pub fn log(message: &str) {
         // print message with green colorized prefix
-        crate::t_println!(
-            "{}[+] {}{}",
-            color::Fg(color::Green),
-            color::Fg(color::Reset),
-            message
-        );
+        crate::t_println!("{}[+] {}{}", "\x1b[32m", "\x1b[0m", message);
     }
     pub fn log_error(message: &str) {
         // print message with red colorized prefix
-        crate::t_eprintln!(
-            "{}[!] {}{}",
-            color::Fg(color::Red),
-            color::Fg(color::Reset),
-            message
-        );
+        crate::t_eprintln!("{}[!] {}{}", "\x1b[31m", "\x1b[0m", message);
     }
 }
 

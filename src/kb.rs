@@ -62,13 +62,13 @@ pub fn block_for_user_input(
                 log!("[status]");
                 match sender.list() {
                     Ok(list) => {
-t_println!("together is running {} commands in parallel:", list.len());
+                        t_println!("together is running {} commands in parallel:", list.len());
                         for command in list {
-t_println!("  {}", command);
+                            t_println!("  {}", command);
                         }
                     }
                     Err(_) => {
-t_println!("together is running in an unknown state");
+                        t_println!("together is running in an unknown state");
                     }
                 }
             }
@@ -119,15 +119,14 @@ t_println!("together is running in an unknown state");
                 }
             }
             Key::Char('t') => {
-                let all_commands = start_opts.config.start_options.as_commands();
-                let command = Terminal::select_single_item(
+                let command = Terminal::select_single_command(
                     "Pick command to run, or press 'q' to cancel",
                     &sender,
-                    &all_commands,
+                    &start_opts.config.start_options.commands,
                 )?;
                 if let Some(command) = command {
-                    sender.send(ProcessAction::Create(command.clone()))?;
-                    state.last_command = Some(command.clone());
+                    sender.send(ProcessAction::Create(command.to_string()))?;
+                    state.last_command = Some(command.to_string());
                 }
             }
             Key::Char('.') => {
@@ -154,7 +153,7 @@ t_println!("together is running in an unknown state");
             Key::Char('z') => {
                 let all_recipes = config::get_unique_recipes(&start_opts.config.start_options);
                 let all_recipes = all_recipes.into_iter().cloned().collect::<Vec<_>>();
-                let recipe = Terminal::select_single_item(
+                let recipe = Terminal::select_single_recipe(
                     "Select a recipe to start running, or press 'q' to cancel (note: this will stop all other commands)",
                     &sender,
                     &all_recipes,

@@ -121,13 +121,20 @@ impl Terminal {
         prompt: &'a str,
         items: &'a [T],
     ) -> Option<&'a T> {
+        let index = Self::select_single_index(prompt, items)?;
+        Some(&items[index])
+    }
+    pub fn select_single_index<'a, T: std::fmt::Display>(
+        prompt: &'a str,
+        items: &'a [T],
+    ) -> Option<usize> {
         let index = dialoguer::Select::with_theme(&ColorfulTheme::default())
             .with_prompt(prompt)
             .items(items)
             .interact_opt()
             .map_err(map_dialoguer_err)
             .unwrap()?;
-        Some(&items[index])
+        Some(index)
     }
     pub fn select_ordered<'a, T: std::fmt::Display>(
         prompt: &'a str,

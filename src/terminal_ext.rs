@@ -1,4 +1,4 @@
-use crate::{errors::TogetherResult, log, manager, process, terminal};
+use crate::{config, errors::TogetherResult, log, manager, process, terminal};
 
 pub trait TerminalExt {
     fn select_single_process<'a>(
@@ -7,7 +7,13 @@ pub trait TerminalExt {
         list: &'a [process::ProcessId],
     ) -> TogetherResult<Option<&'a process::ProcessId>>;
 
-    fn select_single_item<'a>(
+    fn select_single_command<'a>(
+        prompt: &'a str,
+        sender: &'a manager::ProcessManagerHandle,
+        list: &'a [config::commands::CommandConfig],
+    ) -> TogetherResult<Option<&'a str>>;
+
+    fn select_single_recipe<'a>(
         prompt: &'a str,
         sender: &'a manager::ProcessManagerHandle,
         list: &'a [String],
@@ -36,13 +42,33 @@ impl TerminalExt for terminal::Terminal {
         Ok(command)
     }
 
-    fn select_single_item<'a>(
+    fn select_single_command<'a>(
+        prompt: &'a str,
+        _sender: &'a manager::ProcessManagerHandle,
+        list: &'a [config::commands::CommandConfig],
+    ) -> TogetherResult<Option<&'a str>> {
+        if list.is_empty() {
+            log!("No commands available...");
+            return Ok(None);
+        }
+        let commands = list
+            .iter()
+            .map(|c| c.alias().unwrap_or(c.as_str()))
+            .collect::<Vec<_>>();
+        let command = terminal::Terminal::select_single_index(prompt, &commands).map(|index| {
+            let command = list.get(index).unwrap();
+            command.as_str()
+        });
+        Ok(command)
+    }
+
+    fn select_single_recipe<'a>(
         prompt: &'a str,
         _sender: &'a manager::ProcessManagerHandle,
         list: &'a [String],
     ) -> TogetherResult<Option<&'a String>> {
         if list.is_empty() {
-            log!("No items available...");
+            log!("No recipes available...");
             return Ok(None);
         }
         let command = terminal::Terminal::select_single(prompt, list);

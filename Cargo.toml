@@ -10,7 +10,7 @@ keywords = ["execute", "process", "command", "cli", "interactive"]
 repository = "https://github.com/michaelblawrence/together-rs"
 
 [[bin]]
-name = "together_tmp"
+name = "together"
 path = "src/main.rs"
 
 [dependencies]

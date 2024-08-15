@@ -3,6 +3,7 @@ use crate::{
     errors::TogetherResult,
     log, log_err,
     manager::{self, ProcessAction},
+    t_println,
     terminal::Terminal,
     terminal_ext::TerminalExt,
 };
@@ -40,50 +41,34 @@ pub fn block_for_user_input(
                     .send(ProcessAction::KillAll)
                     .expect("Could not send signal on channel.");
             }
-            // Key::Char('a') => {
-            //     println!("Hello, world!");
-            // }
-            // Key::Char('b') => {
-            //     println!("Hello, world!");
-            //     println!("Hello, world!");
-            //     println!("Hello, world!");
-            // }
-            // Key::Char('c') => {
-            //     log!("Hello, world!");
-            // }
-            // Key::Char('d') => {
-            //     log!("Hello, world!");
-            //     log!("Hello, world!");
-            //     log!("Hello, world!");
-            // }
             Key::Char('h') | Key::Char('?') => {
                 log!("[help]");
-                println!("together is a tool to run multiple commands in parallel selectively by an interactive prompt.");
+                t_println!("together is a tool to run multiple commands in parallel selectively by an interactive prompt.");
 
-                println!();
-                println!("Press 't' to trigger a one-time run");
-                println!("Press '.' to re-trigger the last one-time run");
-                println!("Press 'b' to batch trigger commands by recipe");
-                println!("Press 'z' to switch to running a single recipe");
-                println!("Press 'k' to kill a running command");
-                println!("Press 'r' to restart a running command");
-                println!("Press 'l' to list all running commands");
-                println!("Press 'd' to dump the current configuration");
-                println!("Press 'h' or '?' to show this help message");
-                println!("Press 'q' to stop");
-                println!();
+                t_println!();
+                t_println!("Press 't' to trigger a one-time run");
+                t_println!("Press '.' to re-trigger the last one-time run");
+                t_println!("Press 'b' to batch trigger commands by recipe");
+                t_println!("Press 'z' to switch to running a single recipe");
+                t_println!("Press 'k' to kill a running command");
+                t_println!("Press 'r' to restart a running command");
+                t_println!("Press 'l' to list all running commands");
+                t_println!("Press 'd' to dump the current configuration");
+                t_println!("Press 'h' or '?' to show this help message");
+                t_println!("Press 'q' to stop");
+                t_println!();
 
-                println!();
+                t_println!();
                 log!("[status]");
                 match sender.list() {
                     Ok(list) => {
-                        println!("together is running {} commands in parallel:", list.len());
+t_println!("together is running {} commands in parallel:", list.len());
                         for command in list {
-                            println!("  {}", command);
+t_println!("  {}", command);
                         }
                     }
                     Err(_) => {
-                        println!("together is running in an unknown state");
+t_println!("together is running in an unknown state");
                     }
                 }
             }
@@ -100,7 +85,7 @@ pub fn block_for_user_input(
             }
             Key::Char('l') => {
                 for command in sender.list()? {
-                    println!("{}", command);
+                    t_println!("{}", command);
                 }
             }
             Key::Char('d') => {

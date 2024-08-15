@@ -2,7 +2,7 @@ use std::{collections::HashSet, path::PathBuf};
 
 use clap::CommandFactory;
 
-use crate::{errors::TogetherResult, log, log_err, terminal};
+use crate::{errors::TogetherResult, log, log_err, t_println, terminal};
 
 #[derive(Debug, Clone)]
 pub struct StartTogetherOptions {
@@ -181,9 +181,9 @@ pub fn save(
 
 pub fn dump(config: &TogetherConfigFile) -> TogetherResult<()> {
     let config = toml::to_string(config)?;
-    println!("Configuration:");
-    println!();
-    println!("{}", config);
+    t_println!("Configuration:");
+    t_println!();
+    t_println!("{}", config);
     Ok(())
 }
 

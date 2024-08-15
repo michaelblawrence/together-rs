@@ -147,7 +147,7 @@ impl Terminal {
     }
     pub fn log(message: &str) {
         // print message with green colorized prefix
-        println!(
+        crate::t_println!(
             "{}[+] {}{}",
             color::Fg(color::Green),
             color::Fg(color::Reset),
@@ -156,7 +156,7 @@ impl Terminal {
     }
     pub fn log_error(message: &str) {
         // print message with red colorized prefix
-        eprintln!(
+        crate::t_eprintln!(
             "{}[!] {}{}",
             color::Fg(color::Red),
             color::Fg(color::Reset),
@@ -174,6 +174,36 @@ fn map_dialoguer_err(err: dialoguer::Error) -> ! {
         _ => {
             panic!("Unexpected error: {}", io);
         }
+    }
+}
+
+pub mod stdout {
+    /// macro for logging like println! but with a carriage return
+    #[macro_export]
+    macro_rules! t_println {
+        () => {
+            ::std::print!("\r\n");
+        };
+        ($fmt:tt) => {
+            ::std::print!(concat!($fmt, "\r\n"));
+        };
+        ($fmt:tt, $($arg:tt)*) => {
+            ::std::print!(concat!($fmt, "\r\n"), $($arg)*);
+        };
+    }
+
+    /// macro for logging like eprintln! but with a carriage return
+    #[macro_export]
+    macro_rules! t_eprintln {
+        () => {
+            ::std::eprint!("\r\n");
+        };
+        ($fmt:tt) => {
+            ::std::eprint!(concat!($fmt, "\r\n"));
+        };
+        ($fmt:tt, $($arg:tt)*) => {
+            ::std::eprint!(concat!($fmt, "\r\n"), $($arg)*);
+        };
     }
 }
 

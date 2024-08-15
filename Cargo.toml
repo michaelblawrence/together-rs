@@ -22,4 +22,5 @@ libc = "0.2.153"
 semver = "1.0.22"
 serde = { version = "1.0.196", features = ["derive"] }
 subprocess = "0.2.9"
+termion = "4.0.2"
 toml = "0.8.10"

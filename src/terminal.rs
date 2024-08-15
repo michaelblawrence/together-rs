@@ -1,4 +1,5 @@
 use dialoguer::{theme::ColorfulTheme, MultiSelect};
+use termion::color;
 
 #[derive(Debug, clap::Parser)]
 #[clap(
@@ -6,9 +7,9 @@ use dialoguer::{theme::ColorfulTheme, MultiSelect};
     author = "Michael Lawrence",
     about = "Run multiple commands in parallel selectively by an interactive prompt."
 )]
-pub struct Opts {
+pub struct TogetherArgs {
     #[clap(subcommand)]
-    pub sub: Option<SubCommand>,
+    pub command: Option<ArgsCommands>,
 
     #[clap(short, long, help = "Ignore configuration file.")]
     pub no_config: bool,
@@ -18,37 +19,53 @@ pub struct Opts {
 
     #[clap(short, long, help = "Only run the startup commands.")]
     pub init_only: bool,
+
+    #[clap(
+        short,
+        long,
+        help = "Run all commands tagged under provided recipe(s). Use comma to separate multiple recipes.",
+        value_delimiter = ','
+    )]
+    pub recipes: Option<Vec<String>>,
 }
 
 #[derive(Debug, clap::Parser)]
-pub enum SubCommand {
+pub enum ArgsCommands {
     #[clap(
         name = "run",
         about = "Run multiple commands in parallel selectively by an interactive prompt."
     )]
-    Run(Run),
+    Run(RunCommand),
 
     #[clap(name = "rerun", about = "Rerun the last together session.")]
-    Rerun(Rerun),
+    Rerun(RerunCommand),
 
     #[clap(name = "load", about = "Run commands from a configuration file.")]
-    Load(Load),
+    Load(LoadCommand),
 }
 
 #[derive(Debug, clap::Parser)]
-pub struct Load {
+pub struct LoadCommand {
     #[clap(required = true, help = "Configuration file path.")]
     pub path: String,
 
     #[clap(short, long, help = "Only run the startup commands.")]
     pub init_only: bool,
+
+    #[clap(
+        short,
+        long,
+        help = "Run all commands tagged under provided recipe(s). Use comma to separate multiple recipes.",
+        value_delimiter = ','
+    )]
+    pub recipes: Option<Vec<String>>,
 }
 
 #[derive(Debug, clap::Parser)]
-pub struct Rerun {}
+pub struct RerunCommand {}
 
 #[derive(Debug, Clone, clap::Parser)]
-pub struct Run {
+pub struct RunCommand {
     #[clap(
         last = true,
         required = true,
@@ -76,6 +93,7 @@ pub struct Run {
     #[clap(short, long, help = "Enable raw stdout/stderr output.")]
     pub raw: bool,
 
+    #[clap(short, long, help = "Only run the startup commands.")]
     pub init_only: bool,
 }
 
@@ -129,11 +147,21 @@ impl Terminal {
     }
     pub fn log(message: &str) {
         // print message with green colorized prefix
-        println!("\x1b[32m[+]\x1b[0m {}", message);
+        crate::t_println!(
+            "{}[+] {}{}",
+            color::Fg(color::Green),
+            color::Fg(color::Reset),
+            message
+        );
     }
     pub fn log_error(message: &str) {
-        // print message with green colorized prefix
-        eprintln!("\x1b[31m[!]\x1b[0m {}", message);
+        // print message with red colorized prefix
+        crate::t_eprintln!(
+            "{}[!] {}{}",
+            color::Fg(color::Red),
+            color::Fg(color::Reset),
+            message
+        );
     }
 }
 
@@ -149,13 +177,45 @@ fn map_dialoguer_err(err: dialoguer::Error) -> ! {
     }
 }
 
-// macro for logging like println! but with a green prefix
+pub mod stdout {
+    /// macro for logging like println! but with a carriage return
+    #[macro_export]
+    macro_rules! t_println {
+        () => {
+            ::std::print!("\r\n");
+        };
+        ($fmt:tt) => {
+            ::std::print!(concat!($fmt, "\r\n"));
+        };
+        ($fmt:tt, $($arg:tt)*) => {
+            ::std::print!(concat!($fmt, "\r\n"), $($arg)*);
+        };
+    }
+
+    /// macro for logging like eprintln! but with a carriage return
+    #[macro_export]
+    macro_rules! t_eprintln {
+        () => {
+            ::std::eprint!("\r\n");
+        };
+        ($fmt:tt) => {
+            ::std::eprint!(concat!($fmt, "\r\n"));
+        };
+        ($fmt:tt, $($arg:tt)*) => {
+            ::std::eprint!(concat!($fmt, "\r\n"), $($arg)*);
+        };
+    }
+}
+
+/// macro for logging like println! but with a green prefix
 #[macro_export]
 macro_rules! log {
     ($($arg:tt)*) => {
         $crate::terminal::Terminal::log(&format!($($arg)*));
     };
 }
+
+/// macro for logging like eprintln! but with a red prefix
 #[macro_export]
 macro_rules! log_err {
     ($($arg:tt)*) => {

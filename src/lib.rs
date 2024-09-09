@@ -14,6 +14,7 @@ pub mod manager;
 pub mod process;
 pub mod terminal;
 pub mod terminal_ext;
+pub mod update;
 
 pub fn start(options: StartTogetherOptions) -> TogetherResult<()> {
     let StartTogetherOptions {

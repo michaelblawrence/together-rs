@@ -19,10 +19,13 @@ jobs:
             features: windows
           - target: x86_64-unknown-linux-musl
             archive: tar.gz
-            features: termion
+            features: console
           - target: x86_64-apple-darwin
             archive: zip
-            features: termion
+            features: console
+          - target: aarch64-apple-darwin
+            archive: zip
+            features: console
     steps:
       - uses: actions/checkout@master
       - name: Compile and release

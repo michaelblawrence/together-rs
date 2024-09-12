@@ -18,19 +18,19 @@ struct InputState {
 }
 
 enum Key {
-    #[cfg(termion)]
+    #[cfg(feature = "console")]
     CtrlC,
     Char(char),
 }
 
-#[cfg(termion)]
-impl TryFrom<termion::event::Key> for Key {
+#[cfg(feature = "console")]
+impl TryFrom<console::Key> for Key {
     type Error = ();
 
-    fn try_from(key: termion::event::Key) -> Result<Self, Self::Error> {
+    fn try_from(key: console::Key) -> Result<Self, Self::Error> {
         match key {
-            termion::event::Key::Ctrl('c') => Ok(Self::CtrlC),
-            termion::event::Key::Char(c) => Ok(Self::Char(c)),
+            console::Key::CtrlC => Ok(Self::CtrlC),
+            console::Key::Char(c) => Ok(Self::Char(c)),
             _ => Err(()),
         }
     }
@@ -42,40 +42,32 @@ impl From<char> for Key {
     }
 }
 
-#[cfg(termion)]
+#[cfg(feature = "console")]
 pub fn block_for_user_input(
     start_opts: &StartTogetherOptions,
     sender: manager::ProcessManagerHandle,
 ) -> TogetherResult<()> {
-    use std::io::Write;
-    // use termion::event::Key;
-    use termion::input::TermRead;
+    let term = console::Term::stderr();
 
     let mut state = InputState::default();
 
-    // let mut stdout = std::io::stdout().into_raw_mode().unwrap();
-    let mut stdout = std::io::stdout();
-    let stdin = std::io::stdin();
-
-    for k in stdin.keys() {
-        let Ok(k): Result<Key, ()> = k?.try_into() else {
+    while let Ok(k) = term.read_key() {
+        let Ok(k): Result<Key, ()> = k.try_into() else {
             continue;
         };
 
         match handle_key_press(k, &mut state, start_opts, &sender)? {
             ControlFlow::Continue(_) => {
-                write!(stdout, "{}", termion::cursor::Show).unwrap();
-                stdout.flush().unwrap();
+                term.flush().unwrap();
             }
             ControlFlow::Break(_) => break,
         }
     }
 
-    drop(stdout);
     Ok(())
 }
 
-#[cfg(not(termion))]
+#[cfg(not(feature = "console"))]
 pub fn block_for_user_input(
     start_opts: &StartTogetherOptions,
     sender: manager::ProcessManagerHandle,
@@ -110,7 +102,7 @@ fn handle_key_press(
     }
 
     match key {
-        #[cfg(termion)]
+        #[cfg(feature = "console")]
         Key::CtrlC => {
             log!("Ctrl-C pressed, stopping all processes...");
             sender

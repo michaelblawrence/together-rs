@@ -34,7 +34,11 @@ pub fn start(options: StartTogetherOptions) -> TogetherResult<()> {
 
     let selected_commands = collect_together_commands(&manager, &options)?;
 
-    execute_startup_commands(&manager, &config)?;
+    if config.start_options.no_init {
+        log!("Skipping startup commands...");
+    } else {
+        execute_startup_commands(&manager, &config)?;
+    }
 
     if config.start_options.init_only {
         log!("Finished running startup commands, waiting for user input... (press '?' for help)");

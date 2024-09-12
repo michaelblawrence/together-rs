@@ -19,6 +19,13 @@ pub struct TogetherArgs {
     #[clap(short, long, help = "Only run the startup commands.")]
     pub init_only: bool,
 
+    #[clap(
+        short = 's',
+        long = "skip",
+        help = "Skip running the startup commands."
+    )]
+    pub no_init: bool,
+
     #[clap(short, long = "quiet", help = "Quiet mode for startup commands.")]
     pub quiet_startup: bool,
 
@@ -53,6 +60,13 @@ pub struct LoadCommand {
 
     #[clap(short, long, help = "Only run the startup commands.")]
     pub init_only: bool,
+
+    #[clap(
+        short = 's',
+        long = "skip",
+        help = "Skip running the startup commands."
+    )]
+    pub no_init: bool,
 
     #[clap(
         short,
@@ -97,6 +111,13 @@ pub struct RunCommand {
 
     #[clap(short, long, help = "Only run the startup commands.")]
     pub init_only: bool,
+
+    #[clap(
+        short = 's',
+        long = "skip",
+        help = "Skip running the startup commands."
+    )]
+    pub no_init: bool,
 }
 
 pub struct Terminal;

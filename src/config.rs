@@ -22,6 +22,8 @@ pub fn to_start_options(command_args: terminal::TogetherArgs) -> StartTogetherOp
         Some(terminal::ArgsCommands::Run(run_opts)) => {
             let mut config_start_opts: commands::ConfigFileStartOptions = run_opts.into();
             let meta = StartMeta::default();
+            config_start_opts.init_only = command_args.init_only;
+            config_start_opts.no_init = command_args.no_init;
             config_start_opts.quiet_startup = command_args.quiet_startup;
             (TogetherConfigFile::new(config_start_opts), meta)
         }
@@ -60,6 +62,7 @@ pub fn to_start_options(command_args: terminal::TogetherArgs) -> StartTogetherOp
                 .unwrap();
             let config_path: PathBuf = load.path.into();
             config.start_options.init_only = load.init_only;
+            config.start_options.no_init = load.no_init;
             config.start_options.quiet_startup = command_args.quiet_startup;
             let meta = StartMeta {
                 config_path: Some(config_path),
@@ -79,6 +82,7 @@ pub fn to_start_options(command_args: terminal::TogetherArgs) -> StartTogetherOp
                 |mut config| {
                     let config_start_opts = &mut config.start_options;
                     config_start_opts.init_only = command_args.init_only;
+                    config_start_opts.no_init = command_args.no_init;
                     config_start_opts.quiet_startup = command_args.quiet_startup;
                     let meta = StartMeta {
                         config_path: Some("together.toml".into()),
@@ -277,6 +281,8 @@ pub mod commands {
         pub raw: bool,
         #[serde(skip)]
         pub init_only: bool,
+        #[serde(skip)]
+        pub no_init: bool,
     }
 
     mod defaults {
@@ -295,6 +301,7 @@ pub mod commands {
                 quiet_startup: false,
                 raw: args.raw,
                 init_only: args.init_only,
+                no_init: args.no_init,
             }
         }
     }
@@ -312,6 +319,7 @@ pub mod commands {
                 quit_on_completion: config.quit_on_completion,
                 raw: config.raw,
                 init_only: config.init_only,
+                no_init: config.no_init,
             }
         }
     }

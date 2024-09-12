@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, default, sync::Arc};
 
 pub use subprocess_impl::SbProcess::{self as Process};
 
@@ -26,8 +26,31 @@ impl std::fmt::Display for ProcessId {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Default)]
+pub struct SpawnProcessOptions<'a> {
+    cwd: Option<&'a str>,
+    stdio: ProcessStdio,
+    env: Option<HashMap<String, String>>,
+}
+
+impl<'a> SpawnProcessOptions<'a> {
+    pub fn with_cwd(mut self, cwd: &'a str) -> Self {
+        self.cwd = Some(cwd);
+        self
+    }
+    pub fn with_stdio(mut self, stdio: ProcessStdio) -> Self {
+        self.stdio = stdio;
+        self
+    }
+    pub fn with_env(mut self, env: HashMap<String, String>) -> Self {
+        self.env = Some(env);
+        self
+    }
+}
+
+#[derive(Default, Clone, Copy)]
 pub enum ProcessStdio {
+    #[default]
     Inherit,
     Raw,
     StderrOnly,
@@ -56,7 +79,7 @@ mod subprocess_impl {
         log, log_err,
     };
 
-    use super::{ProcessId, ProcessStdio};
+    use super::{ProcessId, ProcessStdio, SpawnProcessOptions};
 
     pub struct SbProcess {
         popen: subprocess::Popen,
@@ -64,21 +87,21 @@ mod subprocess_impl {
     }
 
     impl SbProcess {
-        pub fn spawn(
-            command: &str,
-            cwd: Option<&str>,
-            stdio: ProcessStdio,
-        ) -> TogetherResult<Self> {
+        pub fn spawn(command: &str, options: SpawnProcessOptions) -> TogetherResult<Self> {
             let mut config = PopenConfig::default();
-            config.stdout = match stdio {
+            config.stdout = match options.stdio {
                 ProcessStdio::Raw => subprocess::Redirection::None,
                 _ => subprocess::Redirection::Pipe,
             };
-            config.stderr = match stdio {
+            config.stderr = match options.stdio {
                 ProcessStdio::Raw | ProcessStdio::StderrOnly => subprocess::Redirection::None,
                 _ => subprocess::Redirection::Pipe,
             };
-            config.cwd = cwd.map(|s| s.into());
+            config.cwd = options.cwd.map(|s| s.into());
+            config.env = options
+                .env
+                .as_ref()
+                .map(|env| env.iter().map(|(k, v)| (k.into(), v.into())).collect());
 
             #[cfg(unix)]
             {

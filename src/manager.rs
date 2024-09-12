@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::mpsc};
 use crate::{
     errors::{TogetherError, TogetherInternalError, TogetherResult},
     log, log_err,
-    process::{Process, ProcessId, ProcessStdio},
+    process::{Process, ProcessId, ProcessStdio, SpawnProcessOptions},
 };
 
 pub enum ProcessAction {
@@ -37,6 +37,7 @@ pub enum ProcessManagerError {
 pub struct CreateOptions {
     pub stdio: Option<ProcessStdio>,
     pub cwd: Option<String>,
+    pub env: Option<HashMap<String, String>>,
 }
 
 impl CreateOptions {
@@ -164,16 +165,19 @@ impl ProcessManager {
                 let id = self.index;
                 self.index += 1;
 
-                self.start_new_process(command, self.cwd.clone(), self.raw_stdio.into(), id)
+                let env = None;
+
+                self.start_new_process(command, self.cwd.clone(), self.raw_stdio.into(), env, id)
             }
             ProcessAction::CreateAdvanced(command, options) => {
                 let id = self.index;
                 self.index += 1;
 
                 let raw = options.stdio.unwrap_or(self.raw_stdio.into());
-                let cwd = options.cwd.clone().or_else(|| self.cwd.clone());
+                let cwd = options.cwd.or_else(|| self.cwd.clone());
+                let env = options.env;
 
-                self.start_new_process(command, cwd, raw, id)
+                self.start_new_process(command, cwd, raw, env, id)
             }
             ProcessAction::Wait(id) => match self.processes.get(&id) {
                 Some(_) => {
@@ -227,9 +231,19 @@ impl ProcessManager {
         command: String,
         cwd: Option<String>,
         stdio: ProcessStdio,
+        env: Option<HashMap<String, String>>,
         id: u32,
     ) -> ProcessActionResponse {
-        match Process::spawn(&command, cwd.as_deref(), stdio) {
+        let options = SpawnProcessOptions::default().with_stdio(stdio);
+        let options = match cwd.as_deref() {
+            Some(cwd) => options.with_cwd(cwd),
+            None => options,
+        };
+        let options = match env {
+            Some(env) => options.with_env(env),
+            None => options,
+        };
+        match Process::spawn(&command, options) {
             Ok(mut child) => {
                 let id = ProcessId::new(id, command);
                 if let ProcessStdio::Inherit = stdio {

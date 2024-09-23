@@ -127,6 +127,10 @@ impl Terminal {
         prompt: &'a str,
         items: &'a [T],
     ) -> Vec<&'a T> {
+        if items.is_empty() {
+            return vec![];
+        }
+
         let mut opts_commands = vec![];
         let defaults = items.iter().map(|_| false).collect::<Vec<_>>();
         let multi_select = MultiSelect::with_theme(&ColorfulTheme::default())
@@ -144,6 +148,10 @@ impl Terminal {
         prompt: &'a str,
         items: &'a [T],
     ) -> Option<&'a T> {
+        if items.is_empty() {
+            return None;
+        }
+
         let index = Self::select_single_index(prompt, items)?;
         Some(&items[index])
     }
@@ -151,6 +159,10 @@ impl Terminal {
         prompt: &'a str,
         items: &'a [T],
     ) -> Option<usize> {
+        if items.is_empty() {
+            return None;
+        }
+
         let index = dialoguer::Select::with_theme(&ColorfulTheme::default())
             .with_prompt(prompt)
             .items(items)
@@ -163,6 +175,10 @@ impl Terminal {
         prompt: &'a str,
         items: &'a [T],
     ) -> Option<Vec<&'a T>> {
+        if items.is_empty() {
+            return None;
+        }
+
         let mut opts_commands = vec![];
         let sort = dialoguer::Sort::with_theme(&ColorfulTheme::default())
             .with_prompt(prompt)

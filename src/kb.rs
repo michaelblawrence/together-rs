@@ -18,12 +18,12 @@ struct InputState {
 }
 
 enum Key {
-    #[cfg(termion)]
+    #[cfg(feature = "termion")]
     CtrlC,
     Char(char),
 }
 
-#[cfg(termion)]
+#[cfg(feature = "termion")]
 impl TryFrom<termion::event::Key> for Key {
     type Error = ();
 
@@ -42,7 +42,7 @@ impl From<char> for Key {
     }
 }
 
-#[cfg(termion)]
+#[cfg(feature = "termion")]
 pub fn block_for_user_input(
     start_opts: &StartTogetherOptions,
     sender: manager::ProcessManagerHandle,
@@ -75,7 +75,7 @@ pub fn block_for_user_input(
     Ok(())
 }
 
-#[cfg(not(termion))]
+#[cfg(not(feature = "termion"))]
 pub fn block_for_user_input(
     start_opts: &StartTogetherOptions,
     sender: manager::ProcessManagerHandle,
@@ -110,7 +110,7 @@ fn handle_key_press(
     }
 
     match key {
-        #[cfg(termion)]
+        #[cfg(feature = "termion")]
         Key::CtrlC => {
             log!("Ctrl-C pressed, stopping all processes...");
             sender

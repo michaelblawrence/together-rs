@@ -344,6 +344,19 @@ impl ProcessManagerHandle {
             _ => Err(TogetherInternalError::UnexpectedResponse.into()),
         })
     }
+    pub fn kill(&self, id: ProcessId) -> TogetherResult<Option<()>> {
+        self.send(ProcessAction::Kill(id)).and_then(|r| match r {
+            ProcessActionResponse::Killed => Ok(Some(())),
+            ProcessActionResponse::Error(ProcessManagerError::NoSuchProcess) => Ok(None),
+            _ => Err(TogetherInternalError::UnexpectedResponse.into()),
+        })
+    }
+    pub fn restart(&self, id: ProcessId, command: &str) -> TogetherResult<Option<ProcessId>> {
+        match self.kill(id)? {
+            Some(()) => Ok(Some(self.spawn(command)?)),
+            None => Ok(None),
+        }
+    }
     pub fn wait(&self, id: ProcessId) -> TogetherResult<()> {
         self.send(ProcessAction::Wait(id)).and_then(|r| match r {
             ProcessActionResponse::Waited(done) => done.recv().map_err(|e| e.into()),

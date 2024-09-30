@@ -67,12 +67,15 @@ pub fn block_for_user_input(
             continue;
         };
 
-        match handle_key_press(k, &mut state, start_opts, &sender)? {
-            ControlFlow::Continue(_) => {
+        match handle_key_press(k, &mut state, start_opts, &sender) {
+            Ok(ControlFlow::Continue(_)) => {
                 write!(stdout, "{}", termion::cursor::Show).unwrap();
                 stdout.flush().unwrap();
             }
-            ControlFlow::Break(_) => break,
+            Ok(ControlFlow::Break(_)) => break,
+            Err(e) => {
+                log_err!("Unexpected error: {:?}", e);
+            }
         }
     }
 
@@ -93,9 +96,12 @@ pub fn block_for_user_input(
             continue;
         };
 
-        match handle_key_press(key.into(), &mut state, start_opts, &sender)? {
-            ControlFlow::Continue(_) => {}
-            ControlFlow::Break(_) => break,
+        match handle_key_press(key.into(), &mut state, start_opts, &sender) {
+            Ok(ControlFlow::Continue(_)) => {}
+            Ok(ControlFlow::Break(_)) => break,
+            Err(e) => {
+                log_err!("Unexpected error: {:?}", e);
+            }
         }
 
         input.clear();
@@ -197,7 +203,7 @@ fn handle_key_press(
                 &list,
             )?;
             if let Some(command) = command {
-                sender.send(ProcessAction::Kill(command.clone()))?;
+                sender.kill(command.clone())?;
             }
         }
         Key::Char('K') => {
@@ -246,19 +252,24 @@ fn handle_key_press(
                 &start_opts.config.start_options.commands,
             )?;
             if let Some(command) = command {
-                sender.send(ProcessAction::Create(command.to_string()))?;
+                sender.spawn(command)?;
                 state.last_command = Some(BufferedCommand::Start(command.to_string()));
             }
         }
         Key::Char('.') => match &state.last_command {
             Some(BufferedCommand::Start(command)) => {
-                sender.send(ProcessAction::Create(command.clone()))?;
+                sender.spawn(command)?;
             }
             Some(BufferedCommand::Restart(command, process_id)) => {
-                sender.send(ProcessAction::Kill(process_id.clone()))?;
-                let new_process_id = sender.spawn(command)?;
-                state.last_command =
-                    Some(BufferedCommand::Restart(command.clone(), new_process_id));
+                match sender.restart(process_id.clone(), &command)? {
+                    Some(id) => {
+                        let command = command.clone();
+                        state.last_command = Some(BufferedCommand::Restart(command, id))
+                    }
+                    None => {
+                        log_err!("Could not find process to restart");
+                    }
+                };
             }
             _ => {
                 log!("No last command to re-trigger");
@@ -299,10 +310,10 @@ fn handle_key_press(
                     .collect();
 
                 for command in kill_commands {
-                    sender.send(ProcessAction::Kill(command.clone()))?;
+                    sender.kill(command.clone())?;
                 }
                 for command in recipe_commands {
-                    sender.send(ProcessAction::Create(command.clone()))?;
+                    sender.spawn(&command)?;
                 }
             }
         }

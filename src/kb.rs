@@ -5,7 +5,7 @@ use crate::{
     errors::TogetherResult,
     log, log_err,
     manager::{self, ProcessAction},
-    t_println,
+    process, t_println,
     terminal::Terminal,
     terminal_ext::TerminalExt,
 };
@@ -14,7 +14,12 @@ use crate::{
 struct InputState {
     requested_quit: bool,
     awaiting_quit_command: bool,
-    last_command: Option<String>,
+    last_command: Option<BufferedCommand>,
+}
+
+enum BufferedCommand {
+    Start(String),
+    Restart(String, process::ProcessId),
 }
 
 enum Key {
@@ -123,7 +128,20 @@ fn handle_key_press(
 
             t_println!();
             t_println!("Press 't' to trigger a one-time run");
-            t_println!("Press '.' to re-trigger the last one-time run");
+            t_println!("Press '.' to re-trigger the last one-time run or restart action");
+            if let Some(last) = &state.last_command {
+                t_println!(
+                    "  (last command: [{}] {})",
+                    match last {
+                        BufferedCommand::Start(_) => "start",
+                        BufferedCommand::Restart(_, _) => "restart",
+                    },
+                    match last {
+                        BufferedCommand::Start(command) => command,
+                        BufferedCommand::Restart(command, _) => command,
+                    }
+                );
+            }
             t_println!("Press 'b' to batch trigger commands by recipe");
             t_println!("Press 'z' to switch to running a single recipe");
             t_println!("Press 'k' to kill a running command");
@@ -182,6 +200,29 @@ fn handle_key_press(
                 sender.send(ProcessAction::Kill(command.clone()))?;
             }
         }
+        Key::Char('K') => {
+            let list = sender.list()?;
+            let command = Terminal::select_single_process(
+                "Pick command to kill, or press 'q' to cancel",
+                &sender,
+                &list,
+            )?;
+            let signal = Terminal::select_single(
+                "Pick signal to send, or press 'q' to cancel",
+                &["SIGINT", "SIGTERM", "SIGKILL"],
+            );
+            let target = signal
+                .and_then(|signal| match *signal {
+                    "SIGINT" => Some(process::ProcessSignal::SIGINT),
+                    "SIGTERM" => Some(process::ProcessSignal::SIGTERM),
+                    "SIGKILL" => Some(process::ProcessSignal::SIGKILL),
+                    _ => None,
+                })
+                .and_then(|signal| command.map(|command| (command, signal)));
+            if let Some((command, signal)) = target {
+                sender.send(ProcessAction::KillAdvanced(command.clone(), signal))?;
+            }
+        }
         Key::Char('r') => {
             let list = sender.list()?;
             let command = Terminal::select_single_process(
@@ -191,7 +232,11 @@ fn handle_key_press(
             )?;
             if let Some(command) = command {
                 sender.send(ProcessAction::Kill(command.clone()))?;
-                sender.send(ProcessAction::Create(command.command().to_string()))?;
+                let process_id = sender.spawn(command.command())?;
+                state.last_command = Some(BufferedCommand::Restart(
+                    command.command().to_string(),
+                    process_id,
+                ));
             }
         }
         Key::Char('t') => {
@@ -202,16 +247,23 @@ fn handle_key_press(
             )?;
             if let Some(command) = command {
                 sender.send(ProcessAction::Create(command.to_string()))?;
-                state.last_command = Some(command.to_string());
+                state.last_command = Some(BufferedCommand::Start(command.to_string()));
             }
         }
-        Key::Char('.') => {
-            if let Some(command) = &state.last_command {
+        Key::Char('.') => match &state.last_command {
+            Some(BufferedCommand::Start(command)) => {
                 sender.send(ProcessAction::Create(command.clone()))?;
-            } else {
+            }
+            Some(BufferedCommand::Restart(command, process_id)) => {
+                sender.send(ProcessAction::Kill(process_id.clone()))?;
+                let new_process_id = sender.spawn(command)?;
+                state.last_command =
+                    Some(BufferedCommand::Restart(command.clone(), new_process_id));
+            }
+            _ => {
                 log!("No last command to re-trigger");
             }
-        }
+        },
         Key::Char('b') => {
             let all_recipes = config::get_unique_recipes(&start_opts.config.start_options);
             let all_recipes = all_recipes.into_iter().cloned().collect::<Vec<_>>();

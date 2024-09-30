@@ -213,10 +213,12 @@ fn handle_key_press(
                 &sender,
                 &list,
             )?;
-            let signal = Terminal::select_single(
-                "Pick signal to send, or press 'q' to cancel",
-                &["SIGINT", "SIGTERM", "SIGKILL"],
-            );
+            let signal = command.and_then(|_| {
+                Terminal::select_single(
+                    "Pick signal to send, or press 'q' to cancel",
+                    &["SIGINT", "SIGTERM", "SIGKILL"],
+                )
+            });
             let target = signal
                 .and_then(|signal| match *signal {
                     "SIGINT" => Some(process::ProcessSignal::SIGINT),

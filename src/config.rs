@@ -1,8 +1,15 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::{
+    borrow::Cow,
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use clap::CommandFactory;
 
-use crate::{errors::TogetherResult, log, log_err, t_println, terminal};
+use crate::{
+    errors::{TogetherError, TogetherResult},
+    log, log_err, t_println, terminal,
+};
 
 #[derive(Debug, Clone)]
 pub struct StartTogetherOptions {
@@ -40,7 +47,7 @@ pub fn to_start_options(command_args: terminal::TogetherArgs) -> StartTogetherOp
                     std::process::exit(1);
                 })
                 .unwrap();
-            let config_path: PathBuf = path();
+            let config_path: PathBuf = path_or_default();
             let meta = StartMeta {
                 config_path: Some(config_path),
                 ..StartMeta::default()
@@ -73,19 +80,20 @@ pub fn to_start_options(command_args: terminal::TogetherArgs) -> StartTogetherOp
 
         None => (!command_args.no_config)
             .then_some(())
-            .and_then(|()| load_from("together.toml").ok())
+            .and_then(|()| path(None))
+            .and_then(|path| load_from(&path).ok().map(|config| (config, path)))
             .map_or_else(
                 || {
                     _ = terminal::TogetherArgs::command().print_long_help();
                     std::process::exit(1);
                 },
-                |mut config| {
+                |(mut config, config_path)| {
                     let config_start_opts = &mut config.start_options;
                     config_start_opts.init_only = command_args.init_only;
                     config_start_opts.no_init = command_args.no_init;
                     config_start_opts.quiet_startup = command_args.quiet_startup;
                     let meta = StartMeta {
-                        config_path: Some("together.toml".into()),
+                        config_path: Some(config_path.into()),
                         recipes: command_args.recipes,
                     };
                     (config, meta)
@@ -161,15 +169,38 @@ impl TogetherConfigFile {
     }
 }
 
+enum ConfigFileType {
+    Toml,
+    Yaml,
+}
+
+impl TryFrom<&std::path::Path> for ConfigFileType {
+    type Error = TogetherError;
+
+    fn try_from(value: &std::path::Path) -> Result<Self, Self::Error> {
+        match value.extension().and_then(|ext| ext.to_str()) {
+            Some("toml") => Ok(Self::Toml),
+            Some("yaml") | Some("yml") => Ok(Self::Yaml),
+            _ => Err(TogetherError::InternalError(
+                crate::errors::TogetherInternalError::InvalidConfigExtension,
+            )),
+        }
+    }
+}
+
 pub fn load_from(config_path: impl AsRef<std::path::Path>) -> TogetherResult<TogetherConfigFile> {
+    let config_path = config_path.as_ref();
     let config = std::fs::read_to_string(config_path)?;
-    let config: TogetherConfigFile = toml::from_str(&config)?;
+    let config: TogetherConfigFile = match config_path.try_into()? {
+        ConfigFileType::Toml => toml::from_str(&config)?,
+        ConfigFileType::Yaml => serde_yml::from_str(&config)?,
+    };
     check_version(&config);
     Ok(config)
 }
 
 pub fn load() -> TogetherResult<TogetherConfigFile> {
-    let config_path = path();
+    let config_path = path_or_default();
     log!("Loading configuration from: {:?}", config_path);
     load_from(config_path)
 }
@@ -178,16 +209,20 @@ pub fn save(
     config: &TogetherConfigFile,
     config_path: Option<&std::path::Path>,
 ) -> TogetherResult<()> {
-    let default_path = path();
-    let config_path = config_path.unwrap_or_else(|| default_path.as_path());
+    let config_path = config_path
+        .map(Cow::from)
+        .unwrap_or_else(|| path_or_default().into());
     log!("Saving configuration to: {:?}", config_path);
-    let config = toml::to_string_pretty(config)?;
+    let config = match config_path.as_ref().try_into()? {
+        ConfigFileType::Toml => toml::to_string(config)?,
+        ConfigFileType::Yaml => serde_yml::to_string(config)?,
+    };
     std::fs::write(config_path, config)?;
     Ok(())
 }
 
 pub fn dump(config: &TogetherConfigFile) -> TogetherResult<()> {
-    let config = toml::to_string(config)?;
+    let config = serde_yml::to_string(config)?;
     t_println!("Configuration:");
     t_println!();
     t_println!("{}", config);
@@ -230,8 +265,24 @@ pub fn collect_commands_by_recipes(
     selected_commands
 }
 
-fn path() -> std::path::PathBuf {
-    dirs::config_dir().unwrap().join(".together.toml")
+fn path_or_default() -> std::path::PathBuf {
+    let dir_path = dirs::config_dir().unwrap();
+    match path(Some(&dir_path)) {
+        Some(path) => path,
+        None => dir_path.join("together.yml"),
+    }
+}
+
+fn path(dir: Option<&Path>) -> Option<std::path::PathBuf> {
+    let files = ["together.yml", "together.yaml", "together.toml"];
+    files.iter().find_map(|f| {
+        let path = match &dir {
+            Some(dir) => dir.join(f),
+            None => f.into(),
+        };
+
+        path.exists().then_some(path)
+    })
 }
 
 fn check_version(config: &TogetherConfigFile) {

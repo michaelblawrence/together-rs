@@ -5,6 +5,7 @@ pub type TogetherResult<T> = std::result::Result<T, TogetherError>;
 #[derive(Debug)]
 pub enum TogetherError {
     Io(std::io::Error),
+    Yaml(serde_yml::Error),
     TomlSerialize(toml::ser::Error),
     TomlDeserialize(toml::de::Error),
     ChannelRecvError(mpsc::RecvError),
@@ -17,6 +18,7 @@ pub enum TogetherError {
 pub enum TogetherInternalError {
     ProcessFailedToExit,
     UnexpectedResponse,
+    InvalidConfigExtension,
 }
 
 impl std::fmt::Display for TogetherError {
@@ -24,6 +26,7 @@ impl std::fmt::Display for TogetherError {
         use TogetherInternalError as TIE;
         match self {
             TogetherError::Io(e) => write!(f, "IO error: {}", e),
+            TogetherError::Yaml(e) => write!(f, "YAML error: {}", e),
             TogetherError::TomlSerialize(e) => write!(f, "TOML serialization error: {}", e),
             TogetherError::TomlDeserialize(e) => write!(f, "TOML deserialization error: {}", e),
             TogetherError::ChannelRecvError(e) => write!(f, "Channel receive error: {}", e),
@@ -34,6 +37,9 @@ impl std::fmt::Display for TogetherError {
             TogetherError::InternalError(TIE::UnexpectedResponse) => {
                 write!(f, "Unexpected response from process")
             }
+            TogetherError::InternalError(TIE::InvalidConfigExtension) => {
+                write!(f, "Invalid configuration file extension")
+            }
             TogetherError::DynError(e) => write!(f, "Error: {}", e),
         }
     }
@@ -43,6 +49,7 @@ impl std::error::Error for TogetherError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             TogetherError::Io(e) => Some(e),
+            TogetherError::Yaml(e) => Some(e),
             TogetherError::TomlSerialize(e) => Some(e),
             TogetherError::TomlDeserialize(e) => Some(e),
             TogetherError::ChannelRecvError(e) => Some(e),
@@ -56,6 +63,12 @@ impl std::error::Error for TogetherError {
 impl From<std::io::Error> for TogetherError {
     fn from(e: std::io::Error) -> Self {
         TogetherError::Io(e)
+    }
+}
+
+impl From<serde_yml::Error> for TogetherError {
+    fn from(e: serde_yml::Error) -> Self {
+        TogetherError::Yaml(e)
     }
 }
 

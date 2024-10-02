@@ -83,7 +83,7 @@ While the interactive prompt is running, you can manage the commands by pressing
 
 Every time you run `together`, it saves the configuration to local disk.
 
-You can use the `together load [toml_path]` option to specify a configuration file to use. Or use the following command to start `together` with the last saved configuration:
+You can use the `together load [yml_path]` option to specify a configuration file to use. Or use the following command to start `together` with the last saved configuration:
 
 ```sh
 together rerun

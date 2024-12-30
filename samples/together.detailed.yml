@@ -1,0 +1,44 @@
+# This is a sample configuration file shows how to use `together` to handle a monorepo with multiple services
+version: 0.4.0
+
+# these commands will run sequentially on together startup
+startup:
+  - yarn
+  - prisma
+  - api-types
+
+# this is where you define your commands
+commands:
+  # configured above to run first on startup
+  - command: yarn
+
+  # configured above to run second on startup
+  - alias: prisma
+    command: yarn workspace api-types prisma generate
+
+  # this command will run third on startup (because of the `active` flag)
+  - alias: api-types
+    command: yarn workspace api-types build
+
+  # this command will run concurrently after startup is complete (because of the `default` flag)
+  - alias: server
+    command: yarn workspace server dev
+    recipes:
+      - server
+      - client
+      - processor
+    default: true
+
+  # this command will run concurrently after startup is complete (because of the `default` flag)
+  - alias: client
+    command: yarn workspace client start
+    recipes:
+      - client
+    default: true
+
+  # this command can be run manually using `together run --recipes processor` (this would start the server and event-processor)
+  # or can be run using the 't' key binding once together startup is complete
+  - alias: event-processor
+    command: yarn workspace event-processor dev
+    recipes:
+      - processor

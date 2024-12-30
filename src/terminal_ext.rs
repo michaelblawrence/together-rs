@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::{config, errors::TogetherResult, log, manager, process, terminal};
 
 pub trait TerminalExt {
@@ -11,6 +13,13 @@ pub trait TerminalExt {
         prompt: &'a str,
         sender: &'a manager::ProcessManagerHandle,
         list: &'a [config::commands::CommandConfig],
+    ) -> TogetherResult<Option<&'a str>>;
+
+    fn select_single_command_with_running<'a>(
+        prompt: &'a str,
+        sender: &'a manager::ProcessManagerHandle,
+        list: &'a [config::commands::CommandConfig],
+        running: &'a [process::ProcessId],
     ) -> TogetherResult<Option<&'a str>>;
 
     fn select_single_recipe<'a>(
@@ -54,6 +63,38 @@ impl TerminalExt for terminal::Terminal {
         let commands = list
             .iter()
             .map(|c| c.alias().unwrap_or(c.as_str()))
+            .collect::<Vec<_>>();
+        let command = terminal::Terminal::select_single_index(prompt, &commands).map(|index| {
+            let command = list.get(index).unwrap();
+            command.as_str()
+        });
+        Ok(command)
+    }
+
+    fn select_single_command_with_running<'a>(
+        prompt: &'a str,
+        _sender: &'a manager::ProcessManagerHandle,
+        list: &'a [config::commands::CommandConfig],
+        running: &'a [process::ProcessId],
+    ) -> TogetherResult<Option<&'a str>> {
+        if list.is_empty() {
+            log!("No commands available...");
+            return Ok(None);
+        }
+        let commands = list
+            .iter()
+            .map(
+                |c| match running.iter().filter(|p| c.matches(p.command())).count() {
+                    0 => Cow::from(c.alias().unwrap_or(c.as_str())),
+                    // format: "command (x running)" with gray color for parentheses
+                    x => format!(
+                        "{} \x1b[90m({} running)\x1b[0m",
+                        c.alias().unwrap_or(c.as_str()),
+                        x
+                    )
+                    .into(),
+                },
+            )
             .collect::<Vec<_>>();
         let command = terminal::Terminal::select_single_index(prompt, &commands).map(|index| {
             let command = list.get(index).unwrap();

@@ -391,6 +391,7 @@ pub mod commands {
         Detailed {
             command: String,
             alias: Option<String>,
+            #[serde(alias = "default")]
             active: Option<bool>,
             recipes: Option<Vec<String>>,
         },

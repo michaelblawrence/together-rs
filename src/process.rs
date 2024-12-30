@@ -26,6 +26,13 @@ impl std::fmt::Display for ProcessId {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum ProcessSignal {
+    SIGINT,
+    SIGTERM,
+    SIGKILL,
+}
+
 #[derive(Clone, Copy)]
 pub enum ProcessStdio {
     Inherit,
@@ -56,7 +63,7 @@ mod subprocess_impl {
         log, log_err,
     };
 
-    use super::{ProcessId, ProcessStdio};
+    use super::{ProcessId, ProcessSignal, ProcessStdio};
 
     pub struct SbProcess {
         popen: subprocess::Popen,
@@ -96,7 +103,7 @@ mod subprocess_impl {
             })
         }
 
-        pub fn kill(&mut self) -> TogetherResult<()> {
+        pub fn kill(&mut self, signal: Option<&ProcessSignal>) -> TogetherResult<()> {
             fn check_err<T: Ord + Default>(num: T) -> std::io::Result<T> {
                 if num < T::default() {
                     return Err(std::io::Error::last_os_error());
@@ -115,7 +122,13 @@ mod subprocess_impl {
                     Some(pid) => pid as i32,
                     _ => return Ok(()),
                 };
-                let _code = check_err(unsafe { libc::kill(-pid, libc::SIGINT) })?;
+                let signal = match signal {
+                    Some(ProcessSignal::SIGINT) => libc::SIGINT,
+                    Some(ProcessSignal::SIGTERM) => libc::SIGTERM,
+                    Some(ProcessSignal::SIGKILL) => libc::SIGKILL,
+                    None => libc::SIGTERM,
+                };
+                let _code = check_err(unsafe { libc::kill(-pid, signal) })?;
                 Ok(())
             }
         }

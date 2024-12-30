@@ -5,8 +5,6 @@ use errors::TogetherResult;
 use manager::ProcessAction;
 use terminal_ext::TerminalExt;
 
-use crate::manager::ProcessActionResponse;
-
 pub mod config;
 pub mod errors;
 pub mod kb;
@@ -132,28 +130,16 @@ fn execute_startup_commands(
         .map(|c| c.as_str().to_string())
         .collect::<Vec<_>>();
 
-    let opts = manager::CreateOptions::default();
     let opts = if config.start_options.quiet_startup {
-        opts.with_stderr_only()
+        manager::CreateOptions::default().with_stderr_only()
     } else {
-        opts
+        manager::CreateOptions::default()
     };
 
     for command in commands {
-        match sender.send(ProcessAction::CreateAdvanced(command.clone(), opts.clone()))? {
-            ProcessActionResponse::Created(id) => match sender.send(ProcessAction::Wait(id))? {
-                ProcessActionResponse::Waited(done) => {
-                    done.recv()?;
-                    log!("Startup command '{}' completed", command);
-                }
-                x => {
-                    log_err!("Unexpected response from process manager: {:?}", x);
-                }
-            },
-            x => {
-                log_err!("Unexpected response from process manager: {:?}", x);
-            }
-        }
+        let id = sender.spawn_advanced(&command, &opts)?;
+        sender.wait(id)?;
+        log!("Startup command '{}' completed", command);
     }
 
     Ok(())

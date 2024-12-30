@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::mpsc};
 use crate::{
     errors::{TogetherError, TogetherInternalError, TogetherResult},
     log, log_err,
-    process::{Process, ProcessId, ProcessStdio},
+    process::{Process, ProcessId, ProcessSignal, ProcessStdio},
 };
 
 pub enum ProcessAction {
@@ -11,6 +11,7 @@ pub enum ProcessAction {
     CreateAdvanced(String, CreateOptions),
     Wait(ProcessId),
     Kill(ProcessId),
+    KillAdvanced(ProcessId, ProcessSignal),
     KillAll,
     List,
 }
@@ -184,9 +185,21 @@ impl ProcessManager {
                 None => ProcessActionResponse::Error(ProcessManagerError::NoSuchProcess),
             },
             ProcessAction::Kill(id) => match self.processes.get_mut(&id) {
-                Some(child) => match child.kill() {
+                Some(child) => match child.kill(None) {
                     Ok(_) => {
                         log!("Killing {}", id);
+                        ProcessActionResponse::Killed
+                    }
+                    Err(e) => ProcessActionResponse::Error(ProcessManagerError::KillChildFailed(
+                        e.to_string(),
+                    )),
+                },
+                None => ProcessActionResponse::Error(ProcessManagerError::NoSuchProcess),
+            },
+            ProcessAction::KillAdvanced(id, signal) => match self.processes.get_mut(&id) {
+                Some(child) => match child.kill(Some(&signal)) {
+                    Ok(_) => {
+                        log!("Killing {} with signal {:?}", id, signal);
                         ProcessActionResponse::Killed
                     }
                     Err(e) => ProcessActionResponse::Error(ProcessManagerError::KillChildFailed(
@@ -200,7 +213,7 @@ impl ProcessManager {
 
                 let mut errors = vec![];
                 for (id, child) in self.processes.iter_mut() {
-                    match child.kill() {
+                    match child.kill(None) {
                         Ok(_) => {
                             log!("Killing {}", id);
                         }
@@ -274,7 +287,7 @@ impl ProcessManager {
         }
         if kill_all {
             for (id, mut child) in self.processes.drain() {
-                match child.kill() {
+                match child.kill(None) {
                     Ok(_) => {}
                     Err(e) => {
                         log_err!("Failed to kill {id} => {}", e);
@@ -307,6 +320,46 @@ impl ProcessManagerHandle {
     pub fn list(&self) -> TogetherResult<Vec<ProcessId>> {
         self.send(ProcessAction::List).and_then(|r| match r {
             ProcessActionResponse::List(list) => Ok(list),
+            _ => Err(TogetherInternalError::UnexpectedResponse.into()),
+        })
+    }
+    pub fn spawn(&self, command: &str) -> TogetherResult<ProcessId> {
+        self.send(ProcessAction::Create(command.to_string()))
+            .and_then(|r| match r {
+                ProcessActionResponse::Created(id) => Ok(id),
+                _ => Err(TogetherInternalError::UnexpectedResponse.into()),
+            })
+    }
+    pub fn spawn_advanced(
+        &self,
+        command: &str,
+        options: &CreateOptions,
+    ) -> TogetherResult<ProcessId> {
+        self.send(ProcessAction::CreateAdvanced(
+            command.to_string(),
+            options.clone(),
+        ))
+        .and_then(|r| match r {
+            ProcessActionResponse::Created(id) => Ok(id),
+            _ => Err(TogetherInternalError::UnexpectedResponse.into()),
+        })
+    }
+    pub fn kill(&self, id: ProcessId) -> TogetherResult<Option<()>> {
+        self.send(ProcessAction::Kill(id)).and_then(|r| match r {
+            ProcessActionResponse::Killed => Ok(Some(())),
+            ProcessActionResponse::Error(ProcessManagerError::NoSuchProcess) => Ok(None),
+            _ => Err(TogetherInternalError::UnexpectedResponse.into()),
+        })
+    }
+    pub fn restart(&self, id: ProcessId, command: &str) -> TogetherResult<Option<ProcessId>> {
+        match self.kill(id)? {
+            Some(()) => Ok(Some(self.spawn(command)?)),
+            None => Ok(None),
+        }
+    }
+    pub fn wait(&self, id: ProcessId) -> TogetherResult<()> {
+        self.send(ProcessAction::Wait(id)).and_then(|r| match r {
+            ProcessActionResponse::Waited(done) => done.recv().map_err(|e| e.into()),
             _ => Err(TogetherInternalError::UnexpectedResponse.into()),
         })
     }

@@ -26,7 +26,7 @@ Alternatively, `together` can be installed using the pre-built binaries for your
 
 ```sh
 # For example, on macOS
-curl -L https://github.com/michaelblawrence/together-rs/releases/download/0.3.0/together-rs_0.3.0_x86_64-apple-darwin.zip -o together.zip
+curl -L https://github.com/michaelblawrence/together-rs/releases/download/0.4.0/together-rs_0.4.0_x86_64-apple-darwin.zip -o together.zip
 unzip together.zip
 mv together /usr/local/bin
 ```
@@ -83,7 +83,7 @@ While the interactive prompt is running, you can manage the commands by pressing
 
 Every time you run `together`, it saves the configuration to local disk.
 
-You can use the `together load [toml_path]` option to specify a configuration file to use. Or use the following command to start `together` with the last saved configuration:
+You can use the `together load [yml_path]` option to specify a configuration file to use. Or use the following command to start `together` with the last saved configuration:
 
 ```sh
 together rerun

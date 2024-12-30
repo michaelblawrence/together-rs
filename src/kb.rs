@@ -248,10 +248,12 @@ fn handle_key_press(
             }
         }
         Key::Char('t') => {
-            let command = Terminal::select_single_command(
+            let list = sender.list()?;
+            let command = Terminal::select_single_command_with_running(
                 "Pick command to run, or press 'q' to cancel",
                 &sender,
                 &start_opts.config.start_options.commands,
+                &list,
             )?;
             if let Some(command) = command {
                 sender.spawn(command)?;

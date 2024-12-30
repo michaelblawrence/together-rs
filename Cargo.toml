@@ -1,6 +1,6 @@
 [package]
 name = "together-rs"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
 license = "MIT"
 authors = ["Michael Lawrence <mblawrence27@gmail.com>"]
@@ -21,6 +21,7 @@ dirs = "5.0.1"
 libc = "0.2.153"
 semver = "1.0.22"
 serde = { version = "1.0.196", features = ["derive"] }
+serde_yml = "0.0.12"
 subprocess = "0.2.9"
 termion = { version = "4.0.2", optional = true }
 toml = "0.8.10"

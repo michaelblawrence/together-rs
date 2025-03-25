@@ -31,6 +31,8 @@ pub enum ProcessSignal {
     SIGINT,
     SIGTERM,
     SIGKILL,
+    SIGSTOP,
+    SIGCONT,
 }
 
 #[derive(Clone, Copy)]
@@ -126,6 +128,8 @@ mod subprocess_impl {
                     Some(ProcessSignal::SIGINT) => libc::SIGINT,
                     Some(ProcessSignal::SIGTERM) => libc::SIGTERM,
                     Some(ProcessSignal::SIGKILL) => libc::SIGKILL,
+                    Some(ProcessSignal::SIGSTOP) => libc::SIGSTOP,
+                    Some(ProcessSignal::SIGCONT) => libc::SIGCONT,
                     None => libc::SIGTERM,
                 };
                 let _code = check_err(unsafe { libc::kill(-pid, signal) })?;

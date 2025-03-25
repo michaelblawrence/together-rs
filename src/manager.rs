@@ -363,6 +363,45 @@ impl ProcessManagerHandle {
             _ => Err(TogetherInternalError::UnexpectedResponse.into()),
         })
     }
+    pub fn with_paused<F, T>(&self, f: F) -> TogetherResult<T>
+    where
+        F: FnOnce() -> TogetherResult<T>,
+    {
+        // Check for env var to disable SIGSTOP/SIGCONT during user input
+        let disable_sigstop = std::env::var("TOGETHER_SIGSTOP")
+            .map(|v| v == "0" || v.to_lowercase() == "false")
+            .unwrap_or(false);
+
+        if disable_sigstop {
+            return f();
+        }
+
+        // Get list of running processes
+        let processes = self.list()?;
+
+        // Send SIGSTOP to all processes
+        #[cfg(unix)]
+        for process in &processes {
+            self.send(ProcessAction::KillAdvanced(
+                process.clone(),
+                ProcessSignal::SIGSTOP,
+            ))?;
+        }
+
+        // Execute callback
+        let result = f();
+
+        // Send SIGCONT to all processes
+        #[cfg(unix)]
+        for process in &processes {
+            self.send(ProcessAction::KillAdvanced(
+                process.clone(),
+                ProcessSignal::SIGCONT,
+            ))?;
+        }
+
+        result
+    }
 }
 
 impl Drop for ProcessManagerHandle {

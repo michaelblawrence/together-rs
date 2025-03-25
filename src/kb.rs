@@ -197,28 +197,33 @@ fn handle_key_press(
         }
         Key::Char('k') => {
             let list = sender.list()?;
-            let command = Terminal::select_single_process(
-                "Pick command to kill, or press 'q' to cancel",
-                &sender,
-                &list,
-            )?;
+            let command = sender.with_paused(|| {
+                Terminal::select_single_process(
+                    "Pick command to kill, or press 'q' to cancel",
+                    &sender,
+                    &list,
+                )
+            })?;
             if let Some(command) = command {
                 sender.kill(command.clone())?;
             }
         }
         Key::Char('K') => {
             let list = sender.list()?;
-            let command = Terminal::select_single_process(
-                "Pick command to kill, or press 'q' to cancel",
-                &sender,
-                &list,
-            )?;
-            let signal = command.and_then(|_| {
-                Terminal::select_single(
-                    "Pick signal to send, or press 'q' to cancel",
-                    &["SIGINT", "SIGTERM", "SIGKILL"],
-                )
-            });
+            let (command, signal) = sender.with_paused(|| {
+                let command = Terminal::select_single_process(
+                    "Pick command to kill, or press 'q' to cancel",
+                    &sender,
+                    &list,
+                )?;
+                let signal = command.and_then(|_| {
+                    Terminal::select_single(
+                        "Pick signal to send, or press 'q' to cancel",
+                        &["SIGINT", "SIGTERM", "SIGKILL"],
+                    )
+                });
+                Ok((command, signal))
+            })?;
             let target = signal
                 .and_then(|signal| match *signal {
                     "SIGINT" => Some(process::ProcessSignal::SIGINT),
@@ -233,11 +238,13 @@ fn handle_key_press(
         }
         Key::Char('r') => {
             let list = sender.list()?;
-            let command = Terminal::select_single_process(
-                "Pick command to restart, or press 'q' to cancel",
-                &sender,
-                &list,
-            )?;
+            let command = sender.with_paused(|| {
+                Terminal::select_single_process(
+                    "Pick command to restart, or press 'q' to cancel",
+                    &sender,
+                    &list,
+                )
+            })?;
             if let Some(command) = command {
                 sender.send(ProcessAction::Kill(command.clone()))?;
                 let process_id = sender.spawn(command.command())?;
@@ -249,12 +256,14 @@ fn handle_key_press(
         }
         Key::Char('t') => {
             let list = sender.list()?;
-            let command = Terminal::select_single_command_with_running(
-                "Pick command to run, or press 'q' to cancel",
-                &sender,
-                &start_opts.config.start_options.commands,
-                &list,
-            )?;
+            let command = sender.with_paused(|| {
+                Terminal::select_single_command_with_running(
+                    "Pick command to run, or press 'q' to cancel",
+                    &sender,
+                    &start_opts.config.start_options.commands,
+                    &list,
+                )
+            })?;
             if let Some(command) = command {
                 sender.spawn(command)?;
                 state.last_command = Some(BufferedCommand::Start(command.to_string()));
@@ -282,11 +291,13 @@ fn handle_key_press(
         Key::Char('b') => {
             let all_recipes = config::get_unique_recipes(&start_opts.config.start_options);
             let all_recipes = all_recipes.into_iter().cloned().collect::<Vec<_>>();
-            let recipes = Terminal::select_multiple_recipes(
-                "Select one or more recipes to start running, or press 'q' to cancel",
-                &sender,
-                &all_recipes,
-            )?;
+            let recipes = sender.with_paused(|| {
+                Terminal::select_multiple_recipes(
+                    "Select one or more recipes to start running, or press 'q' to cancel",
+                    &sender,
+                    &all_recipes,
+                )
+            })?;
             let commands =
                 config::collect_commands_by_recipes(&start_opts.config.start_options, &recipes);
             for command in commands {
@@ -296,11 +307,13 @@ fn handle_key_press(
         Key::Char('z') => {
             let all_recipes = config::get_unique_recipes(&start_opts.config.start_options);
             let all_recipes = all_recipes.into_iter().cloned().collect::<Vec<_>>();
-            let recipe = Terminal::select_single_recipe(
-                "Select a recipe to start running, or press 'q' to cancel (note: this will stop all other commands)",
-                &sender,
-                &all_recipes,
-            )?;
+            let recipe = sender.with_paused(|| {
+                Terminal::select_single_recipe(
+                    "Select a recipe to start running, or press 'q' to cancel (note: this will stop all other commands)",
+                    &sender,
+                    &all_recipes,
+                )
+            })?;
             if let Some(recipe) = recipe {
                 let recipe = recipe.clone();
                 let recipe_commands = config::collect_commands_by_recipes(

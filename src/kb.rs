@@ -15,6 +15,7 @@ struct InputState {
     requested_quit: bool,
     awaiting_quit_command: bool,
     last_command: Option<BufferedCommand>,
+    suspended: bool,
 }
 
 enum BufferedCommand {
@@ -154,6 +155,7 @@ fn handle_key_press(
             t_println!("Press 'r' to restart a running command");
             t_println!("Press 'l' to list all running commands");
             t_println!("Press 'd' to dump the current configuration");
+            t_println!("Press 'x' to suspend/resume all processes");
             t_println!("Press 'h' or '?' to show this help message");
             t_println!("Press 'q' to stop");
             t_println!();
@@ -331,6 +333,29 @@ fn handle_key_press(
                 }
                 for command in recipe_commands {
                     sender.spawn(&command)?;
+                }
+            }
+        }
+        Key::Char('x') => {
+            if state.suspended {
+                match sender.resume_all() {
+                    Ok(_) => {
+                        log!("Resumed all processes");
+                        state.suspended = false;
+                    }
+                    Err(e) => {
+                        log_err!("Failed to resume processes: {}", e);
+                    }
+                }
+            } else {
+                match sender.suspend_all() {
+                    Ok(_) => {
+                        log!("Suspended all processes");
+                        state.suspended = true;
+                    }
+                    Err(e) => {
+                        log_err!("Failed to suspend processes: {}", e);
+                    }
                 }
             }
         }

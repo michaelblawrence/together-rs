@@ -14,6 +14,8 @@ pub enum ProcessAction {
     KillAdvanced(ProcessId, ProcessSignal),
     KillAll,
     List,
+    SuspendAll,
+    ResumeAll,
 }
 
 #[derive(Debug)]
@@ -23,6 +25,8 @@ pub enum ProcessActionResponse {
     Killed,
     KilledAll,
     List(Vec<ProcessId>),
+    Suspended,
+    Resumed,
     Error(ProcessManagerError),
 }
 
@@ -232,6 +236,42 @@ impl ProcessManager {
                 let list = self.processes.keys().cloned().collect();
                 ProcessActionResponse::List(list)
             }
+            ProcessAction::SuspendAll => {
+                let mut errors = vec![];
+                for (id, child) in self.processes.iter_mut() {
+                    match child.kill(Some(&ProcessSignal::SIGSTOP)) {
+                        Ok(_) => {
+                            log!("Suspending {}", id);
+                        }
+                        Err(e) => {
+                            errors.push(ProcessManagerError::KillChildFailed(e.to_string()));
+                        }
+                    }
+                }
+                if errors.is_empty() {
+                    ProcessActionResponse::Suspended
+                } else {
+                    ProcessActionResponse::Error(ProcessManagerError::Unknown)
+                }
+            }
+            ProcessAction::ResumeAll => {
+                let mut errors = vec![];
+                for (id, child) in self.processes.iter_mut() {
+                    match child.kill(Some(&ProcessSignal::SIGCONT)) {
+                        Ok(_) => {
+                            log!("Resuming {}", id);
+                        }
+                        Err(e) => {
+                            errors.push(ProcessManagerError::KillChildFailed(e.to_string()));
+                        }
+                    }
+                }
+                if errors.is_empty() {
+                    ProcessActionResponse::Resumed
+                } else {
+                    ProcessActionResponse::Error(ProcessManagerError::Unknown)
+                }
+            }
         }
     }
 
@@ -401,6 +441,26 @@ impl ProcessManagerHandle {
         }
 
         result
+    }
+
+    pub fn suspend_all(&self) -> TogetherResult<()> {
+        match self.send(ProcessAction::SuspendAll)? {
+            ProcessActionResponse::Suspended => Ok(()),
+            ProcessActionResponse::Error(e) => Err(TogetherError::DynError(
+                format!("Failed to suspend processes: {:?}", e).into(),
+            )),
+            _ => Err(TogetherInternalError::UnexpectedResponse.into()),
+        }
+    }
+
+    pub fn resume_all(&self) -> TogetherResult<()> {
+        match self.send(ProcessAction::ResumeAll)? {
+            ProcessActionResponse::Resumed => Ok(()),
+            ProcessActionResponse::Error(e) => Err(TogetherError::DynError(
+                format!("Failed to resume processes: {:?}", e).into(),
+            )),
+            _ => Err(TogetherInternalError::UnexpectedResponse.into()),
+        }
     }
 }
 
